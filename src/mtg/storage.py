@@ -78,8 +78,6 @@ def save_book(book: Book, filepath: Path) -> None:
 
     if book.frozen_until is not None:
         data["book"]["frozen_until"] = _date_to_str(book.frozen_until)
-    else:
-        data["book"]["frozen_until"] = ""
 
     for topic in book.topics:
         data["topic"].append(
