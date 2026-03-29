@@ -21,11 +21,13 @@ from mtg.config import (
     save_config,
 )
 from mtg.display import console, display_all_books, display_book_detail, display_today
-from mtg.models import Session, Topic
+from mtg.models import Session, Topic, TopicStatus
 from mtg.scheduler import (
+    compute_book_progress,
     compute_next_due,
     count_frozen_affected,
     count_sessions,
+    get_due_topics,
     get_latest_session,
     parse_freeze_target,
 )
@@ -398,10 +400,50 @@ def remove(book_id: str, topic_id: str | None) -> None:
 
 
 @main.command("done")
-@click.argument("topic_id")
-def mark_done(topic_id: str) -> None:
-    """Mark a topic as studied and log a session."""
+@click.argument("topic_id", required=False, default=None)
+def mark_done(topic_id: str | None) -> None:
+    """Mark a topic as studied and log a session.
+
+    Run without arguments to pick from due topics interactively.
+    """
     _ensure_init()
+
+    if topic_id is None:
+        # Interactive mode: show due topics and let user pick
+        books = discover_books()
+        actionable: list[tuple[TopicStatus, Book]] = []
+
+        for book in books:
+            if book.frozen:
+                continue
+            sessions = load_sessions(book.filename)
+            due_info = get_due_topics(book, sessions)
+            for status in due_info["overdue"]:
+                actionable.append((status, book))
+            for status in due_info["due_today"]:
+                actionable.append((status, book))
+
+        if not actionable:
+            console.print("\n  [green]Nothing due today![/green] You can still log a session with: [cyan]mtg done <topic_id>[/cyan]\n")
+            return
+
+        console.print(f"\n  [bold]{len(actionable)} topic(s) due:[/bold]\n")
+        for i, (status, book) in enumerate(actionable, 1):
+            overdue_str = ""
+            if status.is_overdue:
+                overdue_str = f" [red](overdue {status.days_overdue}d)[/red]"
+            console.print(
+                f"  [cyan][{i}][/cyan] {status.topic.id:<12} "
+                f"{status.topic.title:<35} "
+                f"[dim]{book.title}[/dim]{overdue_str}"
+            )
+        console.print()
+
+        choice = click.prompt(
+            "  Pick a topic", type=click.IntRange(1, len(actionable))
+        )
+        status, book = actionable[choice - 1]
+        topic_id = status.topic.id
 
     result = find_topic_across_books(topic_id)
     if result is None:
