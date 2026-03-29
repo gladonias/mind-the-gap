@@ -195,6 +195,100 @@ def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
     console.print()
 
 
+@main.command("edit")
+@click.argument("book_id")
+@click.argument("topic_id", required=False, default=None)
+@click.option("--title", default=None, help="New title")
+@click.option("--exam", default=None, help="New exam date (YYYY-MM-DD, or 'none' to clear)")
+@click.option("--sessions", default=None, type=int, help="New sessions_per_topic")
+@click.option("--parent", default=None, help="New parent for a topic (empty string for root)")
+def edit(
+    book_id: str,
+    topic_id: str | None,
+    title: str | None,
+    exam: str | None,
+    sessions: int | None,
+    parent: str | None,
+) -> None:
+    """Edit a book's properties or a topic's title/parent.
+
+    Edit book:   mtg edit <book_id> --title "New Title" --exam 2026-09-01 --sessions 8
+    Edit topic:  mtg edit <book_id> <topic_id> --title "New Title" --parent ch2
+    """
+    _ensure_init()
+
+    result = find_book_by_id(book_id)
+    if result is None:
+        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        return
+
+    book, filepath = result
+
+    if topic_id is not None:
+        # Edit a topic
+        found = None
+        for t in book.topics:
+            if t.id == topic_id:
+                found = t
+                break
+
+        if found is None:
+            console.print(f"\n  [red]Topic '{topic_id}' not found in {book.id}.[/red]\n")
+            return
+
+        if title is None and parent is None:
+            console.print(
+                "\n  [dim]Nothing to change. Use --title or --parent.[/dim]\n"
+            )
+            return
+
+        changes = []
+        if title is not None:
+            found.title = title
+            changes.append(f"title → {title}")
+        if parent is not None:
+            if parent and not any(t.id == parent for t in book.topics):
+                console.print(f"\n  [red]Parent '{parent}' not found in {book.id}.[/red]\n")
+                return
+            found.parent = parent
+            changes.append(f"parent → {'(root)' if not parent else parent}")
+
+        save_book(book, filepath)
+        console.print(f"\n  [green]✓[/green] Updated [cyan]{topic_id}[/cyan]: {', '.join(changes)}\n")
+    else:
+        # Edit book properties
+        if title is None and exam is None and sessions is None:
+            console.print(
+                "\n  [dim]Nothing to change. Use --title, --exam, or --sessions.[/dim]\n"
+            )
+            return
+
+        changes = []
+        if title is not None:
+            book.title = title
+            changes.append(f"title → {title}")
+        if exam is not None:
+            if exam.lower() == "none":
+                book.exam_date = None
+                changes.append("exam date cleared")
+            else:
+                try:
+                    book.exam_date = datetime.date.fromisoformat(exam.strip())
+                    changes.append(f"exam → {book.exam_date.strftime('%b %d, %Y')}")
+                except ValueError:
+                    console.print(f"\n  [red]Invalid date format: '{exam}'. Use YYYY-MM-DD.[/red]\n")
+                    return
+        if sessions is not None:
+            if sessions < 1:
+                console.print("\n  [red]Sessions must be at least 1.[/red]\n")
+                return
+            book.sessions_per_topic = sessions
+            changes.append(f"sessions → {sessions}")
+
+        save_book(book, filepath)
+        console.print(f"\n  [green]✓[/green] Updated [bold]{book.id}[/bold]: {', '.join(changes)}\n")
+
+
 @main.command("remove")
 @click.argument("book_id")
 @click.argument("topic_id", required=False, default=None)
