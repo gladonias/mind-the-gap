@@ -1,0 +1,27 @@
+# Minimal study plan — no hierarchy, no exam date, default settings.
+# Great for quick, informal study tracking.
+
+[book]
+title = "Spanish Vocabulary"
+id = "es"
+sessions_per_topic = 3
+
+[[topic]]
+id = "es1"
+title = "Greetings and Introductions"
+parent = ""
+
+[[topic]]
+id = "es2"
+title = "Numbers and Dates"
+parent = ""
+
+[[topic]]
+id = "es3"
+title = "Food and Restaurants"
+parent = ""
+
+[[topic]]
+id = "es4"
+title = "Directions and Transport"
+parent = ""

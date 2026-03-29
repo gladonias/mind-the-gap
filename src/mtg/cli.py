@@ -1,0 +1,466 @@
+"""CLI entry point for Mind the Gap."""
+
+from __future__ import annotations
+
+import datetime
+import shutil
+import sys
+from pathlib import Path
+
+import click
+
+from mtg import __version__
+from mtg.config import (
+    CONFIDENCE_DESCRIPTIONS,
+    ensure_data_dir,
+    ensure_intervals_file,
+    get_config_path,
+    get_data_dir,
+    get_default_data_dir,
+    is_initialized,
+    save_config,
+)
+from mtg.display import console, display_all_books, display_book_detail, display_today
+from mtg.models import Session, Topic
+from mtg.scheduler import (
+    compute_next_due,
+    count_frozen_affected,
+    count_sessions,
+    get_latest_session,
+    parse_freeze_target,
+)
+from mtg.storage import (
+    append_session,
+    discover_books,
+    find_book_by_id,
+    find_topic_across_books,
+    get_book_path,
+    load_book,
+    load_sessions,
+    save_book,
+)
+
+
+def _ensure_init() -> None:
+    """Check that mtg has been initialized, prompt if not."""
+    if not is_initialized():
+        console.print(
+            "\n  [yellow]Mind the Gap hasn't been set up yet.[/yellow] "
+            "Run: [cyan]mtg init[/cyan]\n"
+        )
+        sys.exit(1)
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+@click.version_option(version=__version__, prog_name="Mind the Gap")
+def main(ctx: click.Context) -> None:
+    """Mind the Gap — a spaced repetition study planner.
+
+    Run without arguments to see all your books, or use a subcommand.
+    """
+    if ctx.invoked_subcommand is None:
+        _ensure_init()
+        books = discover_books()
+        display_all_books(books)
+
+
+@main.command()
+def init() -> None:
+    """Set up Mind the Gap for the first time."""
+    if is_initialized():
+        data_dir = get_data_dir()
+        console.print(
+            f"\n  Mind the Gap is already set up. Data directory: [cyan]{data_dir}[/cyan]\n"
+        )
+        return
+
+    console.print("\n  [bold]Welcome to Mind the Gap![/bold]\n")
+    console.print("  Where should Mind the Gap store your study plans?\n")
+    default = get_default_data_dir()
+    console.print(f"  [cyan][1][/cyan] Default: {default}")
+    console.print("  [cyan][2][/cyan] Custom path\n")
+
+    choice = click.prompt("  Your choice", type=click.IntRange(1, 2), default=1)
+
+    if choice == 1:
+        data_dir = default
+    else:
+        path_str = click.prompt("  Enter the full path")
+        data_dir = Path(path_str).expanduser().resolve()
+
+    # Save config
+    save_config({"data_dir": str(data_dir)})
+
+    # Create directories and files
+    data_dir.mkdir(parents=True, exist_ok=True)
+    ensure_intervals_file()
+
+    console.print(f"\n  [green]✓[/green] Created {data_dir}")
+    console.print(f"  [green]✓[/green] Created {data_dir / 'intervals.toml'}")
+    console.print(f"  [green]✓[/green] Config saved to {get_config_path()}")
+    console.print(
+        "\n  You're ready! To get started:\n"
+        "    Import a plan:    [cyan]mtg add my-book.toml[/cyan]\n"
+        "    Or add topics:    [cyan]mtg topic mybook ch1 \"Introduction\"[/cyan]\n"
+    )
+
+
+@main.command()
+@click.argument("plan_file", type=click.Path(exists=True))
+def add(plan_file: str) -> None:
+    """Import a study plan from a TOML file."""
+    _ensure_init()
+
+    source = Path(plan_file)
+    book = load_book(source)
+
+    # Copy to data directory
+    dest = get_data_dir() / source.name
+    if dest.exists():
+        if not click.confirm(f"  {dest.name} already exists. Overwrite?"):
+            return
+
+    shutil.copy2(source, dest)
+    console.print(f"\n  [green]✓[/green] Imported [bold]{book.title}[/bold] ({book.id})")
+    console.print(f"    {len(book.topics)} topics, {book.sessions_per_topic} sessions each")
+    if book.exam_date:
+        days_left = (book.exam_date - datetime.date.today()).days
+        console.print(f"    Exam: {book.exam_date.strftime('%b %d, %Y')} ({days_left} days)")
+    console.print(f"\n  Run: [cyan]mtg plan {book.id}[/cyan] to see the plan.\n")
+
+
+@main.command("topic")
+@click.argument("book_id")
+@click.argument("topic_id")
+@click.argument("title")
+@click.option("--parent", default="", help="Parent topic/chapter ID")
+def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
+    """Add a single topic to a book."""
+    _ensure_init()
+
+    result = find_book_by_id(book_id)
+
+    if result is None:
+        # Create a new book
+        if not click.confirm(f"  Book '{book_id}' doesn't exist. Create it?"):
+            return
+
+        book_title = click.prompt("  Book title")
+        exam_str = click.prompt("  Exam date (YYYY-MM-DD, or leave blank)", default="")
+        sessions = click.prompt("  Sessions per topic", default=10, type=int)
+
+        exam_date = None
+        if exam_str.strip():
+            try:
+                exam_date = datetime.date.fromisoformat(exam_str.strip())
+            except ValueError:
+                console.print("  [red]Invalid date format. Skipping exam date.[/red]")
+
+        from mtg.models import Book
+
+        book = Book(
+            title=book_title,
+            id=book_id,
+            exam_date=exam_date,
+            sessions_per_topic=sessions,
+            filename=book_id,
+        )
+        filepath = get_book_path(book_id)
+    else:
+        book, filepath = result
+
+    # Check for duplicate topic ID
+    for t in book.topics:
+        if t.id == topic_id:
+            console.print(f"  [red]Topic '{topic_id}' already exists in {book.id}.[/red]")
+            return
+
+    # Validate parent exists if specified
+    if parent:
+        parent_exists = any(t.id == parent for t in book.topics)
+        if not parent_exists:
+            console.print(f"  [red]Parent '{parent}' not found in {book.id}.[/red]")
+            return
+
+    book.topics.append(Topic(id=topic_id, title=title, parent=parent))
+    save_book(book, filepath)
+
+    console.print(f"\n  [green]✓[/green] Added [cyan]{topic_id}[/cyan] — {title}")
+    if parent:
+        console.print(f"    Under: {parent}")
+    console.print()
+
+
+@main.command("done")
+@click.argument("topic_id")
+def mark_done(topic_id: str) -> None:
+    """Mark a topic as studied and log a session."""
+    _ensure_init()
+
+    result = find_topic_across_books(topic_id)
+    if result is None:
+        console.print(f"\n  [red]Topic '{topic_id}' not found in any book.[/red]\n")
+        return
+
+    book, topic, filepath = result
+
+    if book.frozen:
+        console.print(
+            f"\n  [yellow]{book.title} is frozen until "
+            f"{book.frozen_until.strftime('%b %d') if book.frozen_until else '?'}.[/yellow]"
+        )
+        if not click.confirm("  Log a session anyway?"):
+            return
+
+    sessions = load_sessions(book.filename)
+    completed = count_sessions(topic_id, sessions)
+    session_num = completed + 1
+
+    console.print(
+        f"\n  [bold]{topic.title}[/bold] — session {session_num} of {book.sessions_per_topic}\n"
+    )
+
+    # Ask for date
+    console.print("  When did you study this?")
+    console.print(
+        "  [cyan][1][/cyan] Today ({})".format(datetime.date.today().strftime("%b %d"))
+    )
+    console.print("  [cyan][2][/cyan] Enter a custom date\n")
+
+    date_choice = click.prompt("  ", type=click.IntRange(1, 2), default=1)
+
+    if date_choice == 1:
+        study_date = datetime.date.today()
+    else:
+        date_str = click.prompt("  Date (YYYY-MM-DD)")
+        try:
+            study_date = datetime.date.fromisoformat(date_str.strip())
+        except ValueError:
+            console.print("  [red]Invalid date. Using today.[/red]")
+            study_date = datetime.date.today()
+
+    # Ask for confidence
+    console.print("\n  How confident do you feel? (1–10)\n")
+    for level, desc in CONFIDENCE_DESCRIPTIONS.items():
+        console.print(f"  [cyan]{level:>2}[/cyan]  {desc}")
+    console.print()
+
+    confidence = click.prompt("  ", type=click.IntRange(1, 10))
+
+    # Calculate next due
+    next_due = compute_next_due(study_date, confidence)
+
+    # Create and save session
+    session = Session(
+        topic_id=topic_id,
+        book=book.filename,
+        date=study_date,
+        confidence=confidence,
+        next_due=next_due,
+        session_number=session_num,
+    )
+    append_session(book.filename, session)
+
+    days_until = (next_due - datetime.date.today()).days
+    console.print(
+        f"\n  [green]✓[/green] Logged. Next review: "
+        f"{next_due.strftime('%b %d')} ({days_until} day{'s' if days_until != 1 else ''})\n"
+    )
+
+
+@main.command("today")
+@click.argument("book_id", required=False, default=None)
+def today(book_id: str | None) -> None:
+    """Show what's due today (across all books or a specific one)."""
+    _ensure_init()
+    books = discover_books()
+    display_today(books, filter_book_id=book_id)
+
+
+@main.command("plan")
+@click.argument("book_id", required=False, default=None)
+def plan(book_id: str | None) -> None:
+    """Show full plan and progress for a book, or all books."""
+    _ensure_init()
+
+    if book_id:
+        result = find_book_by_id(book_id)
+        if result is None:
+            console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+            return
+        display_book_detail(result[0])
+    else:
+        books = discover_books()
+        if not books:
+            console.print("\n  [dim]No books found. Run:[/dim] mtg add <plan.toml>\n")
+            return
+        for book in books:
+            display_book_detail(book)
+
+
+@main.command("freeze")
+@click.argument("book_id")
+@click.argument("duration")
+def freeze(book_id: str, duration: str) -> None:
+    """Freeze a study plan. Duration: 10D, 2W, 3M, 1Y, or YYYY-MM-DD."""
+    _ensure_init()
+
+    result = find_book_by_id(book_id)
+    if result is None:
+        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        return
+
+    book, filepath = result
+
+    if book.frozen:
+        console.print(
+            f"\n  [yellow]{book.title} is already frozen until "
+            f"{book.frozen_until.strftime('%b %d') if book.frozen_until else '?'}.[/yellow]\n"
+        )
+        return
+
+    try:
+        until = parse_freeze_target(duration)
+    except ValueError as e:
+        console.print(f"\n  [red]{e}[/red]\n")
+        return
+
+    if until <= datetime.date.today():
+        console.print("\n  [red]Freeze date must be in the future.[/red]\n")
+        return
+
+    sessions = load_sessions(book.filename)
+    affected, unaffected = count_frozen_affected(book, sessions, until)
+
+    days_until = (until - datetime.date.today()).days
+    console.print(
+        f"\n  Freezing [bold]{book.title}[/bold] until "
+        f"{until.strftime('%b %d, %Y')} ({days_until} days).\n"
+    )
+    console.print(
+        f"  {affected} session{'s' if affected != 1 else ''} "
+        f"(due between now and {until.strftime('%b %d')}) "
+        f"will be pushed to {until.strftime('%b %d')}."
+    )
+    if unaffected:
+        console.print(
+            f"  {unaffected} session{'s' if unaffected != 1 else ''} "
+            f"(due after {until.strftime('%b %d')}) will not be affected."
+        )
+    console.print()
+
+    if not click.confirm("  Confirm?"):
+        console.print("  Cancelled.\n")
+        return
+
+    book.frozen = True
+    book.frozen_until = until
+    save_book(book, filepath)
+
+    console.print(
+        f"\n  [green]✓[/green] Frozen until {until.strftime('%b %d')}. "
+        f"Run: [cyan]mtg unfreeze {book.id}[/cyan] to resume early.\n"
+    )
+
+
+@main.command("unfreeze")
+@click.argument("book_id")
+def unfreeze(book_id: str) -> None:
+    """Unfreeze a study plan (resume early)."""
+    _ensure_init()
+
+    result = find_book_by_id(book_id)
+    if result is None:
+        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        return
+
+    book, filepath = result
+
+    if not book.frozen:
+        console.print(f"\n  [dim]{book.title} is not frozen.[/dim]\n")
+        return
+
+    sessions = load_sessions(book.filename)
+    today_date = datetime.date.today()
+
+    # Count how many sessions get bumped to today
+    affected = 0
+    for topic in book.leaf_topics():
+        latest = get_latest_session(topic.id, sessions)
+        if latest and not (count_sessions(topic.id, sessions) >= book.sessions_per_topic):
+            if latest.next_due <= (book.frozen_until or today_date):
+                affected += 1
+
+    book.frozen = False
+    book.frozen_until = None
+    save_book(book, filepath)
+
+    console.print(f"\n  Unfreezing [bold]{book.title}[/bold].")
+    if affected:
+        console.print(
+            f"  {affected} session{'s' if affected != 1 else ''} "
+            f"{'were' if affected != 1 else 'was'} paused — "
+            f"{'they are' if affected != 1 else 'it is'} now due today."
+        )
+    console.print(
+        f"\n  [green]✓[/green] Unfrozen. Run: [cyan]mtg today[/cyan] to see your schedule.\n"
+    )
+
+
+@main.command("export")
+@click.argument("book_id")
+@click.option("--output", "-o", default=None, help="Output file path")
+def export_book(book_id: str, output: str | None) -> None:
+    """Export a book's current state as a clean TOML file."""
+    _ensure_init()
+
+    result = find_book_by_id(book_id)
+    if result is None:
+        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        return
+
+    book, filepath = result
+
+    if output:
+        dest = Path(output)
+    else:
+        dest = Path.cwd() / f"{book.filename}-export.toml"
+
+    # Build export with both plan and sessions
+    sessions = load_sessions(book.filename)
+
+    import toml as toml_lib
+
+    export_data: dict = {
+        "book": {
+            "title": book.title,
+            "id": book.id,
+            "sessions_per_topic": book.sessions_per_topic,
+        },
+        "topic": [
+            {"id": t.id, "title": t.title, "parent": t.parent} for t in book.topics
+        ],
+        "session": [
+            {
+                "topic_id": s.topic_id,
+                "date": s.date.isoformat(),
+                "confidence": s.confidence,
+                "next_due": s.next_due.isoformat(),
+                "session_number": s.session_number,
+            }
+            for s in sessions
+        ],
+    }
+
+    if book.exam_date:
+        export_data["book"]["exam_date"] = book.exam_date.isoformat()
+
+    with open(dest, "w") as f:
+        toml_lib.dump(export_data, f)
+
+    console.print(f"\n  [green]✓[/green] Exported to {dest}\n")
+
+
+if __name__ == "__main__":
+    main()

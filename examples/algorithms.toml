@@ -1,0 +1,73 @@
+# Example study plan for Mind the Gap
+# Copy this file to your data directory and edit it, or use it as a template.
+
+[book]
+title = "Introduction to Algorithms"
+id = "clrs"
+exam_date = 2026-07-15
+sessions_per_topic = 5
+
+[[topic]]
+id = "clrs1"
+title = "The Role of Algorithms"
+parent = ""
+
+[[topic]]
+id = "clrs1.1"
+title = "Algorithms as a Technology"
+parent = "clrs1"
+
+[[topic]]
+id = "clrs2"
+title = "Getting Started"
+parent = ""
+
+[[topic]]
+id = "clrs2.1"
+title = "Insertion Sort"
+parent = "clrs2"
+
+[[topic]]
+id = "clrs2.2"
+title = "Analyzing Algorithms"
+parent = "clrs2"
+
+[[topic]]
+id = "clrs2.3"
+title = "Designing Algorithms"
+parent = "clrs2"
+
+[[topic]]
+id = "clrs3"
+title = "Growth of Functions"
+parent = ""
+
+[[topic]]
+id = "clrs3.1"
+title = "Asymptotic Notation"
+parent = "clrs3"
+
+[[topic]]
+id = "clrs3.2"
+title = "Standard Notations and Common Functions"
+parent = "clrs3"
+
+[[topic]]
+id = "clrs4"
+title = "Divide and Conquer"
+parent = ""
+
+[[topic]]
+id = "clrs4.1"
+title = "The Maximum-Subarray Problem"
+parent = "clrs4"
+
+[[topic]]
+id = "clrs4.2"
+title = "Strassen's Algorithm"
+parent = "clrs4"
+
+[[topic]]
+id = "clrs4.3"
+title = "The Substitution Method"
+parent = "clrs4"
