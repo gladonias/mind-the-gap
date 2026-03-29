@@ -45,6 +45,7 @@ from mtg.storage import (
     remove_topic_from_book,
     save_book,
     save_sessions,
+    would_create_cycle,
 )
 
 
@@ -287,6 +288,12 @@ def edit(
         if parent is not None:
             if parent and not any(t.id == parent for t in book.topics):
                 console.print(f"\n  [red]Parent '{parent}' not found in {book.id}.[/red]\n")
+                return
+            if parent and would_create_cycle(book, topic_id, parent):
+                console.print(
+                    f"\n  [red]Cannot set parent to '{parent}' — "
+                    f"this would create a circular reference.[/red]\n"
+                )
                 return
             found.parent = parent
             changes.append(f"parent → {'(root)' if not parent else parent}")
