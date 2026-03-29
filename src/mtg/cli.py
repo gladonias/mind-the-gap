@@ -563,11 +563,12 @@ def undo(topic_id: str) -> None:
 
 @main.command("today")
 @click.argument("book_id", required=False, default=None)
-def today(book_id: str | None) -> None:
+@click.option("--days", default=3, type=int, show_default=True, help="Days to look ahead for 'coming up' section")
+def today(book_id: str | None, days: int) -> None:
     """Show what's due today (across all books or a specific one)."""
     _ensure_init()
     books = discover_books()
-    display_today(books, filter_book_id=book_id)
+    display_today(books, filter_book_id=book_id, lookahead_days=days)
 
 
 @main.command("plan")

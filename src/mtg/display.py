@@ -229,7 +229,11 @@ def display_book_detail(book: Book) -> None:
     console.print(f"\n  [dim]{' │ '.join(parts)}[/dim]\n")
 
 
-def display_today(books: list[Book], filter_book_id: Optional[str] = None) -> None:
+def display_today(
+    books: list[Book],
+    filter_book_id: Optional[str] = None,
+    lookahead_days: int = 3,
+) -> None:
     """Display what's due today across all books (or a specific one)."""
     if filter_book_id:
         books = [b for b in books if b.id == filter_book_id]
@@ -241,7 +245,7 @@ def display_today(books: list[Book], filter_book_id: Optional[str] = None) -> No
 
     for book in books:
         sessions = load_sessions(book.filename)
-        due_info = get_due_topics(book, sessions)
+        due_info = get_due_topics(book, sessions, include_future_days=lookahead_days)
 
         # Book header
         header = f"\n  ─── {book.title} ({book.id}) "
@@ -293,7 +297,7 @@ def display_today(books: list[Book], filter_book_id: Optional[str] = None) -> No
 
         # Coming up
         if due_info["coming_up"]:
-            console.print("\n  [dim bold]COMING UP (next 3 days)[/dim bold]")
+            console.print(f"\n  [dim bold]COMING UP (next {lookahead_days} day{'s' if lookahead_days != 1 else ''})[/dim bold]")
             for status in due_info["coming_up"]:
                 info = _format_due_today(status)
                 console.print(
