@@ -221,8 +221,14 @@ def get_due_topics(
             elif status.next_due <= cutoff:
                 coming_up.append(status)
 
-    # Sort overdue by most overdue first
-    overdue.sort(key=lambda s: s.next_due or today)
+    # Sort overdue by priority: weight days overdue by low confidence
+    # urgency = days_overdue × (11 - confidence), so low confidence + many days = top priority
+    def _overdue_priority(s: TopicStatus) -> float:
+        days = (today - (s.next_due or today)).days
+        confidence_weight = 11 - (s.last_confidence or 1)
+        return -(days * confidence_weight)  # negative for descending sort
+
+    overdue.sort(key=_overdue_priority)
     # Sort coming up by soonest first
     coming_up.sort(key=lambda s: s.next_due or today)
 
