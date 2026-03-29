@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from mtg.models import Book, Session, Topic
-from mtg.storage import load_book, load_sessions, save_book, save_sessions
+from mtg.storage import load_book, load_sessions, save_book, save_sessions, would_create_cycle
 
 
 class TestBookIO:
@@ -61,6 +61,51 @@ class TestBookIO:
         assert loaded.frozen is True
         assert loaded.frozen_until == datetime.date(2026, 5, 1)
 
+    def test_frozen_since_roundtrip(self, tmp_path: Path):
+        """frozen_since should persist through save/load."""
+        book = Book(
+            title="Frozen Book",
+            id="fb",
+            frozen=True,
+            frozen_since=datetime.date(2026, 3, 20),
+            frozen_until=datetime.date(2026, 4, 10),
+            filename="frozen-since",
+            topics=[Topic(id="fb1", title="Topic", parent="")],
+        )
+
+        filepath = tmp_path / "frozen-since.toml"
+        save_book(book, filepath)
+        loaded = load_book(filepath)
+
+        assert loaded.frozen is True
+        assert loaded.frozen_since == datetime.date(2026, 3, 20)
+        assert loaded.frozen_until == datetime.date(2026, 4, 10)
+
+    def test_frozen_since_omitted_when_none(self, tmp_path: Path):
+        """frozen_since should not appear in TOML when None."""
+        book = Book(
+            title="Unfrozen Book",
+            id="ub",
+            frozen=False,
+            frozen_since=None,
+            frozen_until=None,
+            filename="unfrozen",
+            topics=[Topic(id="ub1", title="Topic", parent="")],
+        )
+
+        filepath = tmp_path / "unfrozen.toml"
+        save_book(book, filepath)
+
+        # Read raw TOML to verify keys are absent
+        import toml as toml_lib
+        raw = toml_lib.load(filepath)
+        assert "frozen_since" not in raw["book"]
+        assert "frozen_until" not in raw["book"]
+
+        loaded = load_book(filepath)
+        assert loaded.frozen_since is None
+        assert loaded.frozen_until is None
+
     def test_no_exam_date(self, tmp_path: Path):
         """Book without exam date should work."""
         book = Book(title="No Exam", id="ne", filename="no-exam")
@@ -108,3 +153,62 @@ class TestSessionIO:
         monkeypatch.setattr("mtg.storage.get_data_dir", lambda: tmp_path)
         sessions = load_sessions("nonexistent")
         assert sessions == []
+
+
+class TestCycleDetection:
+    def test_direct_cycle(self):
+        """A→B, then setting B's parent to A should be a cycle."""
+        book = Book(
+            title="Test", id="t", filename="test",
+            topics=[
+                Topic(id="t1", title="A", parent=""),
+                Topic(id="t2", title="B", parent="t1"),
+            ],
+        )
+        assert would_create_cycle(book, "t1", "t2") is True
+
+    def test_indirect_cycle(self):
+        """A→B→C, then setting C's parent to A creates A→B→C→A."""
+        book = Book(
+            title="Test", id="t", filename="test",
+            topics=[
+                Topic(id="t1", title="A", parent=""),
+                Topic(id="t2", title="B", parent="t1"),
+                Topic(id="t3", title="C", parent="t2"),
+            ],
+        )
+        # Setting t1's parent to t3 would create t1→t3→t2→t1
+        assert would_create_cycle(book, "t1", "t3") is True
+
+    def test_no_cycle(self):
+        """Moving a topic to a different subtree is fine."""
+        book = Book(
+            title="Test", id="t", filename="test",
+            topics=[
+                Topic(id="t1", title="A", parent=""),
+                Topic(id="t2", title="B", parent="t1"),
+                Topic(id="t3", title="C", parent=""),
+            ],
+        )
+        assert would_create_cycle(book, "t2", "t3") is False
+
+    def test_root_no_cycle(self):
+        """Setting parent to empty (root) can never create a cycle."""
+        book = Book(
+            title="Test", id="t", filename="test",
+            topics=[
+                Topic(id="t1", title="A", parent=""),
+                Topic(id="t2", title="B", parent="t1"),
+            ],
+        )
+        assert would_create_cycle(book, "t2", "") is False
+
+    def test_self_reference(self):
+        """Setting a topic's parent to itself is a cycle."""
+        book = Book(
+            title="Test", id="t", filename="test",
+            topics=[
+                Topic(id="t1", title="A", parent=""),
+            ],
+        )
+        assert would_create_cycle(book, "t1", "t1") is True
