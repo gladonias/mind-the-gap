@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from mtg.models import Book, Session, Topic
-from mtg.storage import load_book, load_sessions, save_book, save_sessions, would_create_cycle
+from mtg.storage import load_book, load_sessions, save_book, save_sessions
 
 
 class TestBookIO:
@@ -165,7 +165,7 @@ class TestCycleDetection:
                 Topic(id="t2", title="B", parent="t1"),
             ],
         )
-        assert would_create_cycle(book, "t1", "t2") is True
+        assert book.would_create_cycle("t1", "t2") is True
 
     def test_indirect_cycle(self):
         """A→B→C, then setting C's parent to A creates A→B→C→A."""
@@ -178,7 +178,7 @@ class TestCycleDetection:
             ],
         )
         # Setting t1's parent to t3 would create t1→t3→t2→t1
-        assert would_create_cycle(book, "t1", "t3") is True
+        assert book.would_create_cycle("t1", "t3") is True
 
     def test_no_cycle(self):
         """Moving a topic to a different subtree is fine."""
@@ -190,7 +190,7 @@ class TestCycleDetection:
                 Topic(id="t3", title="C", parent=""),
             ],
         )
-        assert would_create_cycle(book, "t2", "t3") is False
+        assert book.would_create_cycle("t2", "t3") is False
 
     def test_root_no_cycle(self):
         """Setting parent to empty (root) can never create a cycle."""
@@ -201,7 +201,7 @@ class TestCycleDetection:
                 Topic(id="t2", title="B", parent="t1"),
             ],
         )
-        assert would_create_cycle(book, "t2", "") is False
+        assert book.would_create_cycle("t2", "") is False
 
     def test_self_reference(self):
         """Setting a topic's parent to itself is a cycle."""
@@ -211,4 +211,4 @@ class TestCycleDetection:
                 Topic(id="t1", title="A", parent=""),
             ],
         )
-        assert would_create_cycle(book, "t1", "t1") is True
+        assert book.would_create_cycle("t1", "t1") is True

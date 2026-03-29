@@ -320,26 +320,10 @@ def pop_latest_session(book_slug: str, topic_id: str) -> Optional[Session]:
 def would_create_cycle(book: Book, topic_id: str, new_parent: str) -> bool:
     """Check if setting topic_id's parent to new_parent would create a cycle.
 
-    Walks up the parent chain from new_parent; if it reaches topic_id,
-    that's a cycle.
+    Deprecated: use ``book.would_create_cycle(topic_id, new_parent)`` instead.
+    Kept for backward compatibility.
     """
-    if not new_parent:
-        return False  # becoming root can't create a cycle
-
-    # Build a lookup of id → parent, with the proposed change applied
-    parent_map = {t.id: t.parent for t in book.topics}
-    parent_map[topic_id] = new_parent
-
-    # Walk up from new_parent
-    visited: set[str] = set()
-    current = new_parent
-    while current:
-        if current in visited:
-            return True  # found a cycle
-        visited.add(current)
-        current = parent_map.get(current, "")
-
-    return topic_id in visited
+    return book.would_create_cycle(topic_id, new_parent)
 
 
 def find_topic_across_books(

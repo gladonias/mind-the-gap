@@ -67,6 +67,30 @@ class Book:
         """Return topics with no parent (chapters or standalone topics)."""
         return [t for t in self.topics if t.is_root]
 
+    def would_create_cycle(self, topic_id: str, new_parent: str) -> bool:
+        """Check if setting topic_id's parent to new_parent would create a cycle.
+
+        Walks up the parent chain from new_parent; if it reaches topic_id,
+        that's a cycle.
+        """
+        if not new_parent:
+            return False  # becoming root can't create a cycle
+
+        # Build a lookup of id → parent, with the proposed change applied
+        parent_map = {t.id: t.parent for t in self.topics}
+        parent_map[topic_id] = new_parent
+
+        # Walk up from new_parent
+        visited: set[str] = set()
+        current = new_parent
+        while current:
+            if current in visited:
+                return True  # found a cycle
+            visited.add(current)
+            current = parent_map.get(current, "")
+
+        return topic_id in visited
+
 
 @dataclass
 class Session:
