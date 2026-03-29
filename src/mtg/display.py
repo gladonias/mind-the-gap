@@ -170,7 +170,10 @@ def display_book_detail(book: Book) -> None:
     header += f"       {book.sessions_per_topic} sessions each"
     if book.exam_date:
         days_left = (book.exam_date - datetime.date.today()).days
-        header += f" │ exam: {book.exam_date.strftime('%b %d')} ({days_left} days)"
+        if days_left < 0:
+            header += f" │ [yellow]exam: {book.exam_date.strftime('%b %d')} ({-days_left}d ago)[/yellow]"
+        else:
+            header += f" │ exam: {book.exam_date.strftime('%b %d')} ({days_left} days)"
     console.print(f"\n{header}\n")
 
     # Freeze banner
@@ -251,7 +254,10 @@ def display_today(
         header = f"\n  ─── {book.title} ({book.id}) "
         if book.exam_date:
             days_left = (book.exam_date - datetime.date.today()).days
-            header += f"──── exam: {book.exam_date.strftime('%b %d')} ({days_left} days) "
+            if days_left < 0:
+                header += f"──── [yellow]exam: {book.exam_date.strftime('%b %d')} ({-days_left}d ago)[/yellow] "
+            else:
+                header += f"──── exam: {book.exam_date.strftime('%b %d')} ({days_left} days) "
         header += "───"
 
         if book.frozen and book.frozen_until:

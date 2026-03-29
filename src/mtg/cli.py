@@ -146,7 +146,13 @@ def add(plan_file: str) -> None:
     console.print(f"    {len(book.topics)} topics, {book.sessions_per_topic} sessions each")
     if book.exam_date:
         days_left = (book.exam_date - datetime.date.today()).days
-        console.print(f"    Exam: {book.exam_date.strftime('%b %d, %Y')} ({days_left} days)")
+        if days_left < 0:
+            console.print(
+                f"    [yellow]Exam: {book.exam_date.strftime('%b %d, %Y')} "
+                f"({-days_left} day{'s' if -days_left != 1 else ''} ago)[/yellow]"
+            )
+        else:
+            console.print(f"    Exam: {book.exam_date.strftime('%b %d, %Y')} ({days_left} days)")
 
     # Import sessions if present
     if raw_sessions:
@@ -191,6 +197,10 @@ def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
         book_title = click.prompt("  Book title")
         exam_str = click.prompt("  Exam date (YYYY-MM-DD, or leave blank)", default="")
         sessions = click.prompt("  Sessions per topic", default=10, type=int)
+
+        if sessions < 1:
+            console.print("  [red]Sessions must be at least 1.[/red]\n")
+            return
 
         exam_date = None
         if exam_str.strip():
