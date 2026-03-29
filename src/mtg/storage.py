@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,11 @@ import toml
 
 from mtg.config import ensure_data_dir, get_data_dir
 from mtg.models import Book, Session, Topic
+
+
+def _warn(message: str) -> None:
+    """Print a warning to stderr."""
+    print(f"  ⚠ {message}", file=sys.stderr)
 
 
 def _parse_date(value) -> Optional[datetime.date]:
@@ -177,9 +183,8 @@ def discover_books() -> list[Book]:
         try:
             book = load_book(filepath)
             books.append(book)
-        except Exception:
-            # Skip malformed files silently
-            pass
+        except Exception as e:
+            _warn(f"Skipping {filepath.name}: {e}")
 
     return books
 
@@ -197,8 +202,8 @@ def find_book_by_id(book_id: str) -> Optional[tuple[Book, Path]]:
             book = load_book(filepath)
             if book.id == book_id:
                 return (book, filepath)
-        except Exception:
-            pass
+        except Exception as e:
+            _warn(f"Skipping {filepath.name}: {e}")
 
     return None
 
@@ -272,7 +277,7 @@ def find_topic_across_books(topic_id: str) -> Optional[tuple[Book, Topic, Path]]
             for topic in book.topics:
                 if topic.id == topic_id:
                     return (book, topic, filepath)
-        except Exception:
-            pass
+        except Exception as e:
+            _warn(f"Skipping {filepath.name}: {e}")
 
     return None
