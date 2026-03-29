@@ -31,12 +31,15 @@ from mtg.scheduler import (
 )
 from mtg.storage import (
     append_session,
+    delete_book_files,
     discover_books,
     find_book_by_id,
     find_topic_across_books,
     get_book_path,
     load_book,
     load_sessions,
+    remove_sessions_for_topics,
+    remove_topic_from_book,
     save_book,
 )
 
@@ -190,6 +193,78 @@ def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
     if parent:
         console.print(f"    Under: {parent}")
     console.print()
+
+
+@main.command("remove")
+@click.argument("book_id")
+@click.argument("topic_id", required=False, default=None)
+def remove(book_id: str, topic_id: str | None) -> None:
+    """Remove a book or a single topic.
+
+    To remove an entire book:  mtg remove <book_id>
+    To remove a single topic:  mtg remove <book_id> <topic_id>
+    """
+    _ensure_init()
+
+    result = find_book_by_id(book_id)
+    if result is None:
+        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        return
+
+    book, filepath = result
+
+    if topic_id is None:
+        # Remove entire book
+        leaf_count = len(book.leaf_topics())
+        sessions = load_sessions(book.filename)
+        console.print(
+            f"\n  This will permanently delete [bold]{book.title}[/bold] "
+            f"({len(book.topics)} topics, {len(sessions)} sessions)."
+        )
+        if not click.confirm("  Are you sure?"):
+            console.print("  Cancelled.\n")
+            return
+
+        deleted = delete_book_files(book.filename)
+        for p in deleted:
+            console.print(f"  [green]✓[/green] Deleted {p.name}")
+        console.print()
+    else:
+        # Remove a single topic
+        found = None
+        for t in book.topics:
+            if t.id == topic_id:
+                found = t
+                break
+
+        if found is None:
+            console.print(f"\n  [red]Topic '{topic_id}' not found in {book.id}.[/red]\n")
+            return
+
+        # Check for descendants
+        descendants = book.all_descendants(topic_id)
+        children = book.children_of(topic_id)
+        if children:
+            console.print(
+                f"\n  [yellow]{topic_id}[/yellow] has {len(children)} "
+                f"direct children and {len(descendants)} leaf descendants. "
+                f"They will all be removed."
+            )
+
+        if not click.confirm(f"  Remove '{topic_id}' from {book.id}?"):
+            console.print("  Cancelled.\n")
+            return
+
+        removed_ids = remove_topic_from_book(book, topic_id)
+        save_book(book, filepath)
+
+        # Clean up sessions
+        sessions_removed = remove_sessions_for_topics(book.filename, set(removed_ids))
+
+        console.print(f"\n  [green]✓[/green] Removed {len(removed_ids)} topic(s): {', '.join(removed_ids)}")
+        if sessions_removed:
+            console.print(f"  [green]✓[/green] Removed {sessions_removed} session(s)")
+        console.print()
 
 
 @main.command("done")

@@ -199,6 +199,47 @@ def find_book_by_id(book_id: str) -> Optional[tuple[Book, Path]]:
     return None
 
 
+def delete_book_files(book_slug: str) -> list[Path]:
+    """Delete a book's TOML and state files. Returns list of deleted paths."""
+    deleted = []
+    for path in [get_book_path(book_slug), get_state_path(book_slug)]:
+        if path.exists():
+            path.unlink()
+            deleted.append(path)
+    return deleted
+
+
+def remove_topic_from_book(book: Book, topic_id: str) -> list[str]:
+    """Remove a topic and its descendants from a book. Returns list of removed IDs."""
+    # Collect the topic and all descendants
+    to_remove = {topic_id}
+    changed = True
+    while changed:
+        changed = False
+        for t in book.topics:
+            if t.parent in to_remove and t.id not in to_remove:
+                to_remove.add(t.id)
+                changed = True
+
+    book.topics = [t for t in book.topics if t.id not in to_remove]
+
+    # Fix orphaned parents: if a removed topic was someone's parent, clear it
+    for t in book.topics:
+        if t.parent in to_remove:
+            t.parent = ""
+
+    return sorted(to_remove)
+
+
+def remove_sessions_for_topics(book_slug: str, topic_ids: set[str]) -> int:
+    """Remove all sessions for the given topic IDs. Returns count removed."""
+    sessions = load_sessions(book_slug)
+    original_count = len(sessions)
+    sessions = [s for s in sessions if s.topic_id not in topic_ids]
+    save_sessions(book_slug, sessions)
+    return original_count - len(sessions)
+
+
 def find_topic_across_books(topic_id: str) -> Optional[tuple[Book, Topic, Path]]:
     """Find which book a topic_id belongs to. Returns (book, topic, filepath) or None."""
     data_dir = get_data_dir()
