@@ -33,7 +33,7 @@ def _atomic_write_toml(filepath: Path, data: dict) -> None:
         with os.fdopen(fd, "w") as f:
             toml.dump(data, f)
         os.replace(tmp_path, filepath)
-    except BaseException:
+    except Exception:
         # Clean up the temp file if anything goes wrong
         try:
             os.unlink(tmp_path)
