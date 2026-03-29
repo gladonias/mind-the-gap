@@ -130,15 +130,35 @@ def get_intervals_path() -> Path:
     return get_data_dir() / "intervals.toml"
 
 
+_intervals_cache: dict[int, int] | None = None
+
+
 def load_intervals() -> dict[int, int]:
-    """Load the confidence-to-days interval mapping."""
+    """Load the confidence-to-days interval mapping.
+
+    The result is cached after the first call. Use clear_intervals_cache()
+    to force a reload (e.g. in tests).
+    """
+    global _intervals_cache
+    if _intervals_cache is not None:
+        return _intervals_cache
+
     intervals_path = get_intervals_path()
     if intervals_path.exists():
         data = toml.load(intervals_path)
         raw = data.get("intervals", {})
         # TOML keys are strings, convert to int→int
-        return {int(k): int(v) for k, v in raw.items()}
-    return DEFAULT_INTERVALS.copy()
+        _intervals_cache = {int(k): int(v) for k, v in raw.items()}
+    else:
+        _intervals_cache = DEFAULT_INTERVALS.copy()
+
+    return _intervals_cache
+
+
+def clear_intervals_cache() -> None:
+    """Clear the cached intervals so the next load_intervals() re-reads the file."""
+    global _intervals_cache
+    _intervals_cache = None
 
 
 def ensure_intervals_file() -> None:
