@@ -230,6 +230,38 @@ def find_book_by_id(book_id: str) -> Optional[tuple[Book, Path]]:
     return None
 
 
+def list_book_ids() -> list[str]:
+    """Return a list of all known book IDs."""
+    data_dir = get_data_dir()
+    if not data_dir.exists():
+        return []
+
+    ids = []
+    for filepath in sorted(data_dir.glob("*.toml")):
+        if filepath.name.endswith(".state.toml") or filepath.name == "intervals.toml":
+            continue
+        try:
+            book = load_book(filepath)
+            ids.append(book.id)
+        except Exception:
+            pass
+    return ids
+
+
+def list_topic_ids_for_book(book: Book) -> list[str]:
+    """Return all topic IDs in a book."""
+    return [t.id for t in book.topics]
+
+
+def suggest_matches(query: str, candidates: list[str], max_results: int = 3) -> list[str]:
+    """Return candidates that are close to query (substring or prefix match)."""
+    query_lower = query.lower()
+    # Exact prefix matches first, then substring matches
+    prefix = [c for c in candidates if c.lower().startswith(query_lower)]
+    substring = [c for c in candidates if query_lower in c.lower() and c not in prefix]
+    return (prefix + substring)[:max_results]
+
+
 def delete_book_files(book_slug: str) -> list[Path]:
     """Delete a book's TOML and state files. Returns list of deleted paths."""
     deleted = []
@@ -310,11 +342,19 @@ def would_create_cycle(book: Book, topic_id: str, new_parent: str) -> bool:
     return topic_id in visited
 
 
-def find_topic_across_books(topic_id: str) -> Optional[tuple[Book, Topic, Path]]:
-    """Find which book a topic_id belongs to. Returns (book, topic, filepath) or None."""
+def find_topic_across_books(
+    topic_id: str,
+) -> Optional[tuple[Book, Topic, Path]]:
+    """Find which book a topic_id belongs to. Returns (book, topic, filepath) or None.
+
+    If the topic exists in multiple books, returns the first match and
+    prints a warning about the ambiguity.
+    """
     data_dir = get_data_dir()
     if not data_dir.exists():
         return None
+
+    matches: list[tuple[Book, Topic, Path]] = []
 
     for filepath in sorted(data_dir.glob("*.toml")):
         if filepath.name.endswith(".state.toml") or filepath.name == "intervals.toml":
@@ -323,8 +363,19 @@ def find_topic_across_books(topic_id: str) -> Optional[tuple[Book, Topic, Path]]
             book = load_book(filepath)
             for topic in book.topics:
                 if topic.id == topic_id:
-                    return (book, topic, filepath)
+                    matches.append((book, topic, filepath))
+                    break  # only one match per book
         except Exception as e:
             _warn(f"Skipping {filepath.name}: {e}")
 
-    return None
+    if not matches:
+        return None
+
+    if len(matches) > 1:
+        book_ids = ", ".join(m[0].id for m in matches)
+        _warn(
+            f"Topic '{topic_id}' exists in multiple books: {book_ids}. "
+            f"Using '{matches[0][0].id}'."
+        )
+
+    return matches[0]

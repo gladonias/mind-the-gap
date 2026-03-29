@@ -38,6 +38,8 @@ from mtg.storage import (
     find_book_by_id,
     find_topic_across_books,
     get_book_path,
+    list_book_ids,
+    list_topic_ids_for_book,
     load_book,
     load_sessions,
     pop_latest_session,
@@ -45,8 +47,48 @@ from mtg.storage import (
     remove_topic_from_book,
     save_book,
     save_sessions,
+    suggest_matches,
     would_create_cycle,
 )
+
+
+_VALID_ID_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _validate_id(value: str, label: str = "ID") -> bool:
+    """Validate that an ID contains only safe characters. Returns True if valid."""
+    if not value:
+        console.print(f"\n  [red]{label} cannot be empty.[/red]\n")
+        return False
+    if not _VALID_ID_PATTERN.match(value):
+        console.print(
+            f"\n  [red]{label} '{value}' contains invalid characters.[/red]\n"
+            f"  [dim]Allowed: letters, digits, dots, hyphens, underscores.[/dim]\n"
+        )
+        return False
+    return True
+
+
+def _book_not_found(book_id: str) -> None:
+    """Print a 'book not found' error with suggestions."""
+    console.print(f"\n  [red]Book '{book_id}' not found.[/red]")
+    suggestions = suggest_matches(book_id, list_book_ids())
+    if suggestions:
+        console.print(f"  [dim]Did you mean: {', '.join(suggestions)}?[/dim]")
+    console.print()
+
+
+def _topic_not_found(topic_id: str, book: object = None) -> None:
+    """Print a 'topic not found' error with suggestions."""
+    if book is not None and hasattr(book, "topics"):
+        console.print(f"\n  [red]Topic '{topic_id}' not found in {book.id}.[/red]")
+        suggestions = suggest_matches(topic_id, list_topic_ids_for_book(book))
+    else:
+        console.print(f"\n  [red]Topic '{topic_id}' not found in any book.[/red]")
+        suggestions = []
+    if suggestions:
+        console.print(f"  [dim]Did you mean: {', '.join(suggestions)}?[/dim]")
+    console.print()
 
 
 def _ensure_init() -> None:
@@ -187,6 +229,11 @@ def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
     """Add a single topic to a book."""
     _ensure_init()
 
+    if not _validate_id(book_id, "Book ID"):
+        return
+    if not _validate_id(topic_id, "Topic ID"):
+        return
+
     result = find_book_by_id(book_id)
 
     if result is None:
@@ -268,7 +315,7 @@ def edit(
 
     result = find_book_by_id(book_id)
     if result is None:
-        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        _book_not_found(book_id)
         return
 
     book, filepath = result
@@ -282,7 +329,7 @@ def edit(
                 break
 
         if found is None:
-            console.print(f"\n  [red]Topic '{topic_id}' not found in {book.id}.[/red]\n")
+            _topic_not_found(topic_id, book)
             return
 
         if title is None and parent is None:
@@ -357,7 +404,7 @@ def remove(book_id: str, topic_id: str | None) -> None:
 
     result = find_book_by_id(book_id)
     if result is None:
-        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        _book_not_found(book_id)
         return
 
     book, filepath = result
@@ -387,7 +434,7 @@ def remove(book_id: str, topic_id: str | None) -> None:
                 break
 
         if found is None:
-            console.print(f"\n  [red]Topic '{topic_id}' not found in {book.id}.[/red]\n")
+            _topic_not_found(topic_id, book)
             return
 
         # Check for descendants
@@ -464,7 +511,7 @@ def mark_done(topic_id: str | None) -> None:
 
     result = find_topic_across_books(topic_id)
     if result is None:
-        console.print(f"\n  [red]Topic '{topic_id}' not found in any book.[/red]\n")
+        _topic_not_found(topic_id)
         return
 
     book, topic, filepath = result
@@ -541,7 +588,7 @@ def undo(topic_id: str) -> None:
 
     result = find_topic_across_books(topic_id)
     if result is None:
-        console.print(f"\n  [red]Topic '{topic_id}' not found in any book.[/red]\n")
+        _topic_not_found(topic_id)
         return
 
     book, topic, filepath = result
@@ -613,7 +660,7 @@ def freeze(book_id: str, duration: str) -> None:
 
     result = find_book_by_id(book_id)
     if result is None:
-        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        _book_not_found(book_id)
         return
 
     book, filepath = result
@@ -726,7 +773,7 @@ def unfreeze(book_id: str) -> None:
 
     result = find_book_by_id(book_id)
     if result is None:
-        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        _book_not_found(book_id)
         return
 
     book, filepath = result
@@ -873,7 +920,7 @@ def export_book(book_id: str, output: str | None) -> None:
 
     result = find_book_by_id(book_id)
     if result is None:
-        console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+        _book_not_found(book_id)
         return
 
     book, filepath = result
