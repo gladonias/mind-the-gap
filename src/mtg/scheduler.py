@@ -40,17 +40,35 @@ def parse_duration(duration_str: str) -> datetime.timedelta:
         raise ValueError(f"Unknown duration unit: {unit}")
 
 
-def parse_freeze_target(duration_or_date: str) -> datetime.date:
-    """Parse either a duration string or an ISO date into a target date."""
+def is_absolute_date(duration_or_date: str) -> bool:
+    """Check if the string is an absolute ISO date (YYYY-MM-DD)."""
+    try:
+        datetime.date.fromisoformat(duration_or_date)
+        return True
+    except ValueError:
+        return False
+
+
+def parse_freeze_target(
+    duration_or_date: str, start_date: Optional[datetime.date] = None
+) -> datetime.date:
+    """Parse either a duration string or an ISO date into a target date.
+
+    If a duration is given (e.g. '2W'), it is computed relative to start_date
+    (defaults to today if not provided).
+    """
+    if start_date is None:
+        start_date = datetime.date.today()
+
     # Try as ISO date first
     try:
         return datetime.date.fromisoformat(duration_or_date)
     except ValueError:
         pass
 
-    # Try as duration
+    # Try as duration — relative to start_date
     delta = parse_duration(duration_or_date)
-    return datetime.date.today() + delta
+    return start_date + delta
 
 
 def compute_next_due(study_date: datetime.date, confidence: int) -> datetime.date:
@@ -237,13 +255,22 @@ def count_actionable(book: Book, sessions: list[Session]) -> int:
     return count
 
 
-def count_frozen_affected(book: Book, sessions: list[Session], until: datetime.date) -> tuple[int, int]:
+def count_frozen_affected(
+    book: Book,
+    sessions: list[Session],
+    until: datetime.date,
+    since: Optional[datetime.date] = None,
+) -> tuple[int, int]:
     """Count sessions affected vs unaffected by freezing until a given date.
 
     Returns (affected_count, unaffected_count).
-    Affected = next_due is on or before the unfreeze date.
+    Affected = next_due is between `since` (inclusive) and `until` (inclusive).
     Unaffected = next_due is after the unfreeze date.
+    If `since` is None, defaults to today.
     """
+    if since is None:
+        since = datetime.date.today()
+
     affected = 0
     unaffected = 0
 
@@ -252,7 +279,10 @@ def count_frozen_affected(book: Book, sessions: list[Session], until: datetime.d
         if status.is_done or status.is_not_started:
             continue
         if status.next_due is not None:
-            if status.next_due <= until:
+            if since <= status.next_due <= until:
+                affected += 1
+            elif status.next_due < since:
+                # Was already overdue before the freeze started — still affected
                 affected += 1
             else:
                 unaffected += 1

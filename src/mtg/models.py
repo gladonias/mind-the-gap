@@ -36,6 +36,7 @@ class Book:
     exam_date: Optional[datetime.date] = None
     sessions_per_topic: int = 10
     frozen: bool = False
+    frozen_since: Optional[datetime.date] = None
     frozen_until: Optional[datetime.date] = None
     topics: list[Topic] = field(default_factory=list)
     filename: str = ""  # the file this was loaded from (without path)

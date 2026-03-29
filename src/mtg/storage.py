@@ -46,6 +46,7 @@ def load_book(filepath: Path) -> Book:
         exam_date=_parse_date(book_data.get("exam_date")),
         sessions_per_topic=int(book_data.get("sessions_per_topic", 10)),
         frozen=bool(book_data.get("frozen", False)),
+        frozen_since=_parse_date(book_data.get("frozen_since")),
         frozen_until=_parse_date(book_data.get("frozen_until")),
         filename=filepath.stem,
     )
@@ -75,6 +76,9 @@ def save_book(book: Book, filepath: Path) -> None:
 
     if book.exam_date is not None:
         data["book"]["exam_date"] = _date_to_str(book.exam_date)
+
+    if book.frozen_since is not None:
+        data["book"]["frozen_since"] = _date_to_str(book.frozen_since)
 
     if book.frozen_until is not None:
         data["book"]["frozen_until"] = _date_to_str(book.frozen_until)
