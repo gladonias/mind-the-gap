@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import datetime
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +18,28 @@ from mtg.models import Book, Session, Topic
 def _warn(message: str) -> None:
     """Print a warning to stderr."""
     print(f"  ⚠ {message}", file=sys.stderr)
+
+
+def _atomic_write_toml(filepath: Path, data: dict) -> None:
+    """Write a TOML file atomically using a temp file + os.replace().
+
+    This prevents data corruption if the process is interrupted mid-write.
+    """
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=filepath.parent, suffix=".tmp", prefix=filepath.stem
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            toml.dump(data, f)
+        os.replace(tmp_path, filepath)
+    except BaseException:
+        # Clean up the temp file if anything goes wrong
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _parse_date(value) -> Optional[datetime.date]:
@@ -98,8 +122,7 @@ def save_book(book: Book, filepath: Path) -> None:
             }
         )
 
-    with open(filepath, "w") as f:
-        toml.dump(data, f)
+    _atomic_write_toml(filepath, data)
 
 
 def get_book_path(book_slug: str) -> Path:
@@ -153,8 +176,7 @@ def save_sessions(book_slug: str, sessions: list[Session]) -> None:
             }
         )
 
-    with open(state_path, "w") as f:
-        toml.dump(data, f)
+    _atomic_write_toml(state_path, data)
 
 
 def append_session(book_slug: str, session: Session) -> None:
