@@ -42,6 +42,7 @@ from mtg.storage import (
     remove_sessions_for_topics,
     remove_topic_from_book,
     save_book,
+    save_sessions,
 )
 
 
@@ -113,24 +114,58 @@ def init() -> None:
 @main.command()
 @click.argument("plan_file", type=click.Path(exists=True))
 def add(plan_file: str) -> None:
-    """Import a study plan from a TOML file."""
+    """Import a study plan from a TOML file.
+
+    If the file contains [[session]] entries (e.g. from `mtg export`),
+    those are imported into the state file as well.
+    """
     _ensure_init()
+
+    import toml as toml_lib
 
     source = Path(plan_file)
     book = load_book(source)
 
-    # Copy to data directory
+    # Check for embedded sessions (from export files)
+    raw_data = toml_lib.load(source)
+    raw_sessions = raw_data.get("session", [])
+
+    # Copy plan to data directory (without session data)
     dest = get_data_dir() / source.name
     if dest.exists():
         if not click.confirm(f"  {dest.name} already exists. Overwrite?"):
             return
 
-    shutil.copy2(source, dest)
+    # Save a clean book file (no session entries)
+    save_book(book, dest)
+
     console.print(f"\n  [green]✓[/green] Imported [bold]{book.title}[/bold] ({book.id})")
     console.print(f"    {len(book.topics)} topics, {book.sessions_per_topic} sessions each")
     if book.exam_date:
         days_left = (book.exam_date - datetime.date.today()).days
         console.print(f"    Exam: {book.exam_date.strftime('%b %d, %Y')} ({days_left} days)")
+
+    # Import sessions if present
+    if raw_sessions:
+        from mtg.storage import _parse_date
+
+        imported_sessions = []
+        for s in raw_sessions:
+            imported_sessions.append(
+                Session(
+                    topic_id=s.get("topic_id", ""),
+                    book=book.filename,
+                    date=_parse_date(s.get("date")) or datetime.date.today(),
+                    confidence=int(s.get("confidence", 1)),
+                    next_due=_parse_date(s.get("next_due")) or datetime.date.today(),
+                    session_number=int(s.get("session_number", 1)),
+                )
+            )
+        save_sessions(book.filename, imported_sessions)
+        console.print(
+            f"  [green]✓[/green] Restored {len(imported_sessions)} session(s) from export"
+        )
+
     console.print(f"\n  Run: [cyan]mtg plan {book.id}[/cyan] to see the plan.\n")
 
 
