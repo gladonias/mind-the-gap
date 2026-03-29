@@ -176,8 +176,11 @@ def display_book_detail(book: Book) -> None:
     # Freeze banner
     if book.frozen and book.frozen_until:
         days_left = (book.frozen_until - datetime.date.today()).days
+        since_str = ""
+        if book.frozen_since and book.frozen_since != datetime.date.today():
+            since_str = f"from {book.frozen_since.strftime('%b %d')} "
         console.print(
-            f"  [yellow]⏸ FROZEN until {book.frozen_until.strftime('%b %d')} "
+            f"  [yellow]⏸ FROZEN {since_str}until {book.frozen_until.strftime('%b %d')} "
             f"({days_left} day{'s' if days_left != 1 else ''} remaining)[/yellow]"
         )
         console.print(
@@ -250,8 +253,11 @@ def display_today(books: list[Book], filter_book_id: Optional[str] = None) -> No
         if book.frozen and book.frozen_until:
             console.print(header)
             days_left = (book.frozen_until - datetime.date.today()).days
+            since_str = ""
+            if book.frozen_since and book.frozen_since != datetime.date.today():
+                since_str = f"from {book.frozen_since.strftime('%b %d')} "
             console.print(
-                f"  │ [yellow]FROZEN until {book.frozen_until.strftime('%b %d')} "
+                f"  │ [yellow]FROZEN {since_str}until {book.frozen_until.strftime('%b %d')} "
                 f"({days_left} days). Run:[/yellow] mtg unfreeze {book.id}"
             )
             continue

@@ -591,6 +591,8 @@ def freeze(book_id: str, duration: str) -> None:
     """Freeze a study plan. Duration: 10D, 2W, 3M, 1Y, or YYYY-MM-DD."""
     _ensure_init()
 
+    from mtg.scheduler import is_absolute_date
+
     result = find_book_by_id(book_id)
     if result is None:
         console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
@@ -599,33 +601,81 @@ def freeze(book_id: str, duration: str) -> None:
     book, filepath = result
 
     if book.frozen:
+        since_str = (
+            f" (since {book.frozen_since.strftime('%b %d')})"
+            if book.frozen_since
+            else ""
+        )
         console.print(
             f"\n  [yellow]{book.title} is already frozen until "
-            f"{book.frozen_until.strftime('%b %d') if book.frozen_until else '?'}.[/yellow]\n"
+            f"{book.frozen_until.strftime('%b %d') if book.frozen_until else '?'}"
+            f"{since_str}.[/yellow]\n"
         )
         return
 
+    # Ask when the freeze started
+    today = datetime.date.today()
+    console.print("\n  When did the freeze start?\n")
+    console.print(
+        "  [cyan][1][/cyan] Today ({})".format(today.strftime("%b %d"))
+    )
+    console.print("  [cyan][2][/cyan] Enter a past date\n")
+
+    date_choice = click.prompt("  Your choice", type=click.IntRange(1, 2), default=1)
+
+    if date_choice == 1:
+        since = today
+    else:
+        date_str = click.prompt("  Start date (YYYY-MM-DD)")
+        try:
+            since = datetime.date.fromisoformat(date_str.strip())
+        except ValueError:
+            console.print("  [red]Invalid date format. Use YYYY-MM-DD.[/red]\n")
+            return
+        if since > today:
+            console.print("  [red]Start date cannot be in the future.[/red]\n")
+            return
+
+    # Parse the end date — durations are relative to the start date
     try:
-        until = parse_freeze_target(duration)
+        until = parse_freeze_target(duration, start_date=since)
     except ValueError as e:
         console.print(f"\n  [red]{e}[/red]\n")
         return
 
-    if until <= datetime.date.today():
-        console.print("\n  [red]Freeze date must be in the future.[/red]\n")
+    # Guardrail: end date must be after start date
+    if until <= since:
+        console.print(
+            f"\n  [red]Freeze end date ({until.strftime('%b %d, %Y')}) "
+            f"must be after the start date ({since.strftime('%b %d, %Y')}).[/red]\n"
+        )
+        return
+
+    # Guardrail: end date must be in the future
+    if until <= today:
+        console.print(
+            f"\n  [red]Freeze end date ({until.strftime('%b %d, %Y')}) "
+            f"must be in the future.[/red]\n"
+        )
         return
 
     sessions = load_sessions(book.filename)
-    affected, unaffected = count_frozen_affected(book, sessions, until)
+    affected, unaffected = count_frozen_affected(book, sessions, until, since=since)
 
-    days_until = (until - datetime.date.today()).days
+    # Build the summary
+    duration_days = (until - since).days
+    if since == today:
+        from_str = "from today"
+    else:
+        from_str = f"from {since.strftime('%b %d')}"
+
     console.print(
-        f"\n  Freezing [bold]{book.title}[/bold] until "
-        f"{until.strftime('%b %d, %Y')} ({days_until} days).\n"
+        f"\n  Freezing [bold]{book.title}[/bold]\n"
+        f"    {from_str} → until {until.strftime('%b %d, %Y')} ({duration_days} days).\n"
     )
     console.print(
         f"  {affected} session{'s' if affected != 1 else ''} "
-        f"(due between now and {until.strftime('%b %d')}) "
+        f"(due between {since.strftime('%b %d')} and {until.strftime('%b %d')}) "
         f"will be pushed to {until.strftime('%b %d')}."
     )
     if unaffected:
@@ -640,11 +690,12 @@ def freeze(book_id: str, duration: str) -> None:
         return
 
     book.frozen = True
+    book.frozen_since = since
     book.frozen_until = until
     save_book(book, filepath)
 
     console.print(
-        f"\n  [green]✓[/green] Frozen until {until.strftime('%b %d')}. "
+        f"\n  [green]✓[/green] Frozen {from_str} until {until.strftime('%b %d')}. "
         f"Run: [cyan]mtg unfreeze {book.id}[/cyan] to resume early.\n"
     )
 
@@ -678,6 +729,7 @@ def unfreeze(book_id: str) -> None:
                 affected += 1
 
     book.frozen = False
+    book.frozen_since = None
     book.frozen_until = None
     save_book(book, filepath)
 
