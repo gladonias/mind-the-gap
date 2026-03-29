@@ -240,6 +240,20 @@ def remove_sessions_for_topics(book_slug: str, topic_ids: set[str]) -> int:
     return original_count - len(sessions)
 
 
+def pop_latest_session(book_slug: str, topic_id: str) -> Optional[Session]:
+    """Remove and return the most recent session for a topic. Returns None if no sessions."""
+    sessions = load_sessions(book_slug)
+    topic_sessions = [(i, s) for i, s in enumerate(sessions) if s.topic_id == topic_id]
+    if not topic_sessions:
+        return None
+
+    # Find the one with highest session_number (and latest date as tiebreaker)
+    idx, latest = max(topic_sessions, key=lambda pair: (pair[1].session_number, pair[1].date))
+    sessions.pop(idx)
+    save_sessions(book_slug, sessions)
+    return latest
+
+
 def find_topic_across_books(topic_id: str) -> Optional[tuple[Book, Topic, Path]]:
     """Find which book a topic_id belongs to. Returns (book, topic, filepath) or None."""
     data_dir = get_data_dir()

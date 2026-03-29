@@ -38,6 +38,7 @@ from mtg.storage import (
     get_book_path,
     load_book,
     load_sessions,
+    pop_latest_session,
     remove_sessions_for_topics,
     remove_topic_from_book,
     save_book,
@@ -436,6 +437,44 @@ def mark_done(topic_id: str) -> None:
         f"\n  [green]✓[/green] Logged. Next review: "
         f"{next_due.strftime('%b %d')} ({days_until} day{'s' if days_until != 1 else ''})\n"
     )
+
+
+@main.command("undo")
+@click.argument("topic_id")
+def undo(topic_id: str) -> None:
+    """Undo the last study session for a topic."""
+    _ensure_init()
+
+    result = find_topic_across_books(topic_id)
+    if result is None:
+        console.print(f"\n  [red]Topic '{topic_id}' not found in any book.[/red]\n")
+        return
+
+    book, topic, filepath = result
+
+    sessions = load_sessions(book.filename)
+    completed = count_sessions(topic_id, sessions)
+    if completed == 0:
+        console.print(f"\n  [dim]{topic.title} has no sessions to undo.[/dim]\n")
+        return
+
+    latest = get_latest_session(topic_id, sessions)
+    console.print(
+        f"\n  Undo session {latest.session_number} of [bold]{topic.title}[/bold]?"
+    )
+    console.print(
+        f"  (date: {latest.date.strftime('%b %d')}, "
+        f"confidence: {latest.confidence}, "
+        f"next due: {latest.next_due.strftime('%b %d')})"
+    )
+
+    if not click.confirm("\n  Confirm?"):
+        console.print("  Cancelled.\n")
+        return
+
+    removed = pop_latest_session(book.filename, topic_id)
+    if removed:
+        console.print(f"\n  [green]✓[/green] Undone. Session {removed.session_number} removed.\n")
 
 
 @main.command("today")
