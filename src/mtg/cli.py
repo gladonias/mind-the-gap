@@ -616,6 +616,107 @@ def unfreeze(book_id: str) -> None:
     )
 
 
+@main.command("stats")
+@click.argument("book_id", required=False, default=None)
+def stats(book_id: str | None) -> None:
+    """Show study statistics (overall or for a specific book)."""
+    _ensure_init()
+
+    if book_id:
+        result = find_book_by_id(book_id)
+        if result is None:
+            console.print(f"\n  [red]Book '{book_id}' not found.[/red]\n")
+            return
+        books = [result[0]]
+    else:
+        books = discover_books()
+
+    if not books:
+        console.print("\n  [dim]No books found.[/dim]\n")
+        return
+
+    all_sessions: list[Session] = []
+    for book in books:
+        all_sessions.extend(load_sessions(book.filename))
+
+    if not all_sessions:
+        console.print("\n  [dim]No study sessions logged yet.[/dim]\n")
+        return
+
+    # Overall stats
+    total_sessions = len(all_sessions)
+    avg_confidence = sum(s.confidence for s in all_sessions) / total_sessions
+    unique_dates = sorted({s.date for s in all_sessions})
+    unique_topics = {s.topic_id for s in all_sessions}
+
+    # Streak calculation: count consecutive days ending today (or yesterday)
+    today = datetime.date.today()
+    streak = 0
+    check_date = today
+    date_set = set(unique_dates)
+    # Allow streak to start from today or yesterday
+    if check_date not in date_set:
+        check_date = today - datetime.timedelta(days=1)
+    while check_date in date_set:
+        streak += 1
+        check_date -= datetime.timedelta(days=1)
+
+    # Sessions in last 7 / 30 days
+    week_ago = today - datetime.timedelta(days=7)
+    month_ago = today - datetime.timedelta(days=30)
+    sessions_this_week = sum(1 for s in all_sessions if s.date > week_ago)
+    sessions_this_month = sum(1 for s in all_sessions if s.date > month_ago)
+
+    scope = f" for [bold]{books[0].title}[/bold]" if book_id else ""
+    console.print(f"\n  [bold]Study Statistics[/bold]{scope}\n")
+
+    from rich.table import Table
+
+    table = Table(show_header=False, padding=(0, 2), show_edge=False, show_lines=False)
+    table.add_column(style="dim", width=22)
+    table.add_column(style="bold")
+
+    table.add_row("Total sessions", str(total_sessions))
+    table.add_row("Topics studied", str(len(unique_topics)))
+    table.add_row("Study days", str(len(unique_dates)))
+    table.add_row("Current streak", f"{streak} day{'s' if streak != 1 else ''}")
+    table.add_row("Avg. confidence", f"{avg_confidence:.1f} / 10")
+    table.add_row("Last 7 days", f"{sessions_this_week} sessions")
+    table.add_row("Last 30 days", f"{sessions_this_month} sessions")
+
+    if unique_dates:
+        table.add_row("First session", unique_dates[0].strftime("%b %d, %Y"))
+        table.add_row("Last session", unique_dates[-1].strftime("%b %d, %Y"))
+
+    console.print(table)
+
+    # Per-book breakdown if showing all
+    if not book_id and len(books) > 1:
+        console.print(f"\n  [bold]Per Book[/bold]\n")
+        book_table = Table(
+            show_header=True, header_style="bold", padding=(0, 1),
+            show_edge=True, show_lines=False,
+        )
+        book_table.add_column("Book", width=25)
+        book_table.add_column("Sessions", justify="right", width=10)
+        book_table.add_column("Avg. Conf.", justify="right", width=10)
+        book_table.add_column("Progress", justify="right", width=10)
+
+        for book in books:
+            book_sessions = load_sessions(book.filename)
+            if not book_sessions:
+                continue
+            b_total = len(book_sessions)
+            b_avg = sum(s.confidence for s in book_sessions) / b_total
+            completed, total = compute_book_progress(book, book_sessions)
+            pct = f"{round(completed / total * 100)}%" if total > 0 else "0%"
+            book_table.add_row(book.title, str(b_total), f"{b_avg:.1f}", pct)
+
+        console.print(book_table)
+
+    console.print()
+
+
 @main.command("export")
 @click.argument("book_id")
 @click.option("--output", "-o", default=None, help="Output file path")
