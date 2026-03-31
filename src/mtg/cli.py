@@ -394,7 +394,8 @@ def edit(
 @main.command("remove")
 @click.argument("book_id")
 @click.argument("topic_id", required=False, default=None)
-def remove(book_id: str, topic_id: str | None) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview what would be removed without making changes")
+def remove(book_id: str, topic_id: str | None, dry_run: bool) -> None:
     """Remove a book or a single topic.
 
     To remove an entire book:  mtg remove <book_id>
@@ -411,12 +412,16 @@ def remove(book_id: str, topic_id: str | None) -> None:
 
     if topic_id is None:
         # Remove entire book
-        leaf_count = len(book.leaf_topics())
         sessions = load_sessions(book.filename)
         console.print(
             f"\n  This will permanently delete [bold]{book.title}[/bold] "
             f"({len(book.topics)} topics, {len(sessions)} sessions)."
         )
+
+        if dry_run:
+            console.print("  [dim](dry run — no changes made)[/dim]\n")
+            return
+
         if not click.confirm("  Are you sure?"):
             console.print("  Cancelled.\n")
             return
@@ -446,6 +451,22 @@ def remove(book_id: str, topic_id: str | None) -> None:
                 f"direct children and {len(descendants)} leaf descendants. "
                 f"They will all be removed."
             )
+
+        if dry_run:
+            # Show what would be removed
+            to_remove = {topic_id}
+            changed = True
+            while changed:
+                changed = False
+                for t in book.topics:
+                    if t.parent in to_remove and t.id not in to_remove:
+                        to_remove.add(t.id)
+                        changed = True
+            console.print(
+                f"\n  Would remove {len(to_remove)} topic(s): {', '.join(sorted(to_remove))}"
+            )
+            console.print("  [dim](dry run — no changes made)[/dim]\n")
+            return
 
         if not click.confirm(f"  Remove '{topic_id}' from {book.id}?"):
             console.print("  Cancelled.\n")
@@ -653,7 +674,8 @@ def plan(book_id: str | None) -> None:
 @main.command("freeze")
 @click.argument("book_id")
 @click.argument("duration")
-def freeze(book_id: str, duration: str) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview the freeze without making changes")
+def freeze(book_id: str, duration: str, dry_run: bool) -> None:
     """Freeze a study plan. Duration: 10D, 2W, 3M, 1Y, or YYYY-MM-DD."""
     _ensure_init()
 
@@ -751,6 +773,10 @@ def freeze(book_id: str, duration: str) -> None:
         )
     console.print()
 
+    if dry_run:
+        console.print("  [dim](dry run — no changes made)[/dim]\n")
+        return
+
     if not click.confirm("  Confirm?"):
         console.print("  Cancelled.\n")
         return
@@ -768,7 +794,8 @@ def freeze(book_id: str, duration: str) -> None:
 
 @main.command("unfreeze")
 @click.argument("book_id")
-def unfreeze(book_id: str) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview the unfreeze without making changes")
+def unfreeze(book_id: str, dry_run: bool) -> None:
     """Unfreeze a study plan (resume early)."""
     _ensure_init()
 
@@ -794,18 +821,23 @@ def unfreeze(book_id: str) -> None:
             if latest.next_due <= (book.frozen_until or today_date):
                 affected += 1
 
-    book.frozen = False
-    book.frozen_since = None
-    book.frozen_until = None
-    save_book(book, filepath)
-
     console.print(f"\n  Unfreezing [bold]{book.title}[/bold].")
     if affected:
         console.print(
             f"  {affected} session{'s' if affected != 1 else ''} "
             f"{'were' if affected != 1 else 'was'} paused — "
-            f"{'they are' if affected != 1 else 'it is'} now due today."
+            f"{'they' if affected != 1 else 'it'} would become due today."
         )
+
+    if dry_run:
+        console.print("  [dim](dry run — no changes made)[/dim]\n")
+        return
+
+    book.frozen = False
+    book.frozen_since = None
+    book.frozen_until = None
+    save_book(book, filepath)
+
     console.print(
         f"\n  [green]✓[/green] Unfrozen. Run: [cyan]mtg today[/cyan] to see your schedule.\n"
     )
