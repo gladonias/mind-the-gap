@@ -12,12 +12,15 @@ import click
 from mtg import __version__
 from mtg.config import (
     CONFIDENCE_DESCRIPTIONS,
+    clear_intervals_cache,
     ensure_data_dir,
     ensure_intervals_file,
     get_config_path,
     get_data_dir,
     get_default_data_dir,
+    get_intervals_path,
     is_initialized,
+    load_intervals,
     save_config,
 )
 from mtg.display import console, display_all_books, display_book_detail, display_today
@@ -996,6 +999,128 @@ def export_book(book_id: str, output: str | None) -> None:
         toml_lib.dump(export_data, f)
 
     console.print(f"\n  [green]✓[/green] Exported to {dest}\n")
+
+
+@main.group("config", invoke_without_command=True)
+@click.pass_context
+def config(ctx: click.Context) -> None:
+    """View or edit Mind the Gap configuration.
+
+    Run without a sub-command to see the current configuration summary.
+    """
+    _ensure_init()
+
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Show current config summary
+    data_dir = get_data_dir()
+    config_path = get_config_path()
+    intervals_path = get_intervals_path()
+    intervals = load_intervals()
+
+    console.print("\n  [bold]Configuration[/bold]\n")
+
+    from rich.table import Table
+
+    table = Table(show_header=False, padding=(0, 2), show_edge=False, show_lines=False)
+    table.add_column(style="dim", width=22)
+    table.add_column(style="bold")
+
+    table.add_row("Config file", str(config_path))
+    table.add_row("Data directory", str(data_dir))
+    table.add_row("Intervals file", str(intervals_path))
+
+    console.print(table)
+    console.print(
+        f"\n  [dim]Run:[/dim] mtg config intervals [dim]to view/edit review intervals.[/dim]\n"
+    )
+
+
+@config.group("intervals", invoke_without_command=True)
+@click.pass_context
+def config_intervals(ctx: click.Context) -> None:
+    """View or edit the confidence-to-days interval mapping."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Show current intervals
+    intervals = load_intervals()
+    console.print("\n  [bold]Review Intervals[/bold] (confidence → days)\n")
+
+    from rich.table import Table
+
+    table = Table(
+        show_header=True, header_style="bold", padding=(0, 2),
+        show_edge=True, show_lines=False,
+    )
+    table.add_column("Confidence", justify="center", width=12)
+    table.add_column("Days", justify="center", width=8)
+    table.add_column("Description", width=50)
+
+    for level in sorted(intervals.keys()):
+        desc = CONFIDENCE_DESCRIPTIONS.get(level, "")
+        colour = CONFIDENCE_COLOURS.get(level, "white")
+        table.add_row(
+            f"[{colour}]{level}[/{colour}]",
+            str(intervals[level]),
+            f"[dim]{desc}[/dim]",
+        )
+
+    console.print(table)
+    console.print(
+        f"\n  [dim]Edit:[/dim] mtg config intervals set <level> <days>"
+        f"\n  [dim]File:[/dim] {get_intervals_path()}\n"
+    )
+
+
+@config_intervals.command("set")
+@click.argument("level", type=click.IntRange(1, 10))
+@click.argument("days", type=click.IntRange(1))
+def config_intervals_set(level: int, days: int) -> None:
+    """Set the number of days for a confidence level.
+
+    Example: mtg config intervals set 5 7
+    """
+    import toml as toml_lib
+
+    intervals_path = get_intervals_path()
+
+    if intervals_path.exists():
+        data = toml_lib.load(intervals_path)
+    else:
+        data = {"intervals": {str(k): v for k, v in load_intervals().items()}}
+
+    old_value = data.get("intervals", {}).get(str(level), "?")
+    data.setdefault("intervals", {})[str(level)] = days
+
+    with open(intervals_path, "w") as f:
+        toml_lib.dump(data, f)
+
+    clear_intervals_cache()
+
+    console.print(
+        f"\n  [green]✓[/green] Confidence {level}: {old_value} → {days} days\n"
+    )
+
+
+@config_intervals.command("reset")
+def config_intervals_reset() -> None:
+    """Reset all intervals to their defaults."""
+    from mtg.config import DEFAULT_INTERVALS_TOML
+
+    intervals_path = get_intervals_path()
+
+    if not click.confirm("  Reset all intervals to defaults?"):
+        console.print("  Cancelled.\n")
+        return
+
+    with open(intervals_path, "w") as f:
+        f.write(DEFAULT_INTERVALS_TOML)
+
+    clear_intervals_cache()
+
+    console.print("\n  [green]✓[/green] Intervals reset to defaults.\n")
 
 
 if __name__ == "__main__":
