@@ -21,6 +21,7 @@ from mtg.config import (
     save_config,
 )
 from mtg.display import console, display_all_books, display_book_detail, display_today
+from mtg.theme import CONFIDENCE_COLOURS
 from mtg.models import Session, Topic, TopicStatus
 from mtg.scheduler import (
     compute_book_progress,
@@ -553,7 +554,8 @@ def mark_done(topic_id: str | None) -> None:
     # Ask for confidence
     console.print("\n  How confident do you feel? (1–10)\n")
     for level, desc in CONFIDENCE_DESCRIPTIONS.items():
-        console.print(f"  [cyan]{level:>2}[/cyan]  {desc}")
+        colour = CONFIDENCE_COLOURS.get(level, "cyan")
+        console.print(f"  [{colour}]{level:>2}[/{colour}]  {desc}")
     console.print()
 
     confidence = click.prompt("  ", type=click.IntRange(1, 10))
