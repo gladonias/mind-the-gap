@@ -17,6 +17,7 @@ class Topic:
 
     @property
     def is_root(self) -> bool:
+        """True if this topic has no parent (top-level chapter or standalone)."""
         return self.parent == ""
 
     @property
@@ -117,6 +118,7 @@ class TopicStatus:
 
     @property
     def days_overdue(self) -> int:
+        """Number of days past the due date (0 if not overdue or not started)."""
         if self.next_due is None:
             return 0
         delta = (datetime.date.today() - self.next_due).days
@@ -124,14 +126,17 @@ class TopicStatus:
 
     @property
     def is_overdue(self) -> bool:
+        """True if the topic's next review date is in the past."""
         return self.next_due is not None and self.next_due < datetime.date.today()
 
     @property
     def is_due_today(self) -> bool:
+        """True if the topic's next review date is today."""
         return self.next_due is not None and self.next_due == datetime.date.today()
 
     @property
     def is_not_started(self) -> bool:
+        """True if no sessions have been completed for this topic."""
         return self.sessions_completed == 0
 
 
