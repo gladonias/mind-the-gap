@@ -11,6 +11,7 @@ from rich.table import Table
 from rich.text import Text
 
 from mtg.models import Book, ChapterStatus, TopicStatus
+from mtg.theme import PROGRESS_EMPTY, PROGRESS_FILLED, PROGRESS_WIDTH, TITLE_WRAP_WIDTH
 from mtg.scheduler import (
     build_book_tree,
     compute_book_progress,
@@ -21,16 +22,14 @@ from mtg.storage import load_sessions
 
 console = Console()
 
-TITLE_WRAP_WIDTH = 30
 
-
-def _progress_bar(completed: int, total: int, width: int = 10) -> str:
+def _progress_bar(completed: int, total: int, width: int = PROGRESS_WIDTH) -> str:
     """Create a text progress bar like ████░░░░░░."""
     if total == 0:
-        return "░" * width
+        return PROGRESS_EMPTY * width
     filled = round((completed / total) * width)
     filled = min(filled, width)
-    return "█" * filled + "░" * (width - filled)
+    return PROGRESS_FILLED * filled + PROGRESS_EMPTY * (width - filled)
 
 
 def _wrap_title(title: str, width: int = TITLE_WRAP_WIDTH) -> str:
