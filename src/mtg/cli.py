@@ -58,6 +58,27 @@ from mtg.storage import (
 _VALID_ID_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
+# ── Shell completion helpers ─────────────────────────────────────────────
+
+def _complete_book_id(ctx, param, incomplete):
+    """Shell completion callback for book IDs."""
+    try:
+        return [bid for bid in list_book_ids() if bid.startswith(incomplete)]
+    except Exception:
+        return []
+
+
+def _complete_topic_id(ctx, param, incomplete):
+    """Shell completion callback for topic IDs (across all books)."""
+    try:
+        ids = []
+        for book in discover_books():
+            ids.extend(t.id for t in book.topics)
+        return [tid for tid in sorted(set(ids)) if tid.startswith(incomplete)]
+    except Exception:
+        return []
+
+
 def _validate_id(value: str, label: str = "ID") -> bool:
     """Validate that an ID contains only safe characters. Returns True if valid."""
     if not value:
@@ -224,8 +245,8 @@ def add(plan_file: str) -> None:
 
 
 @main.command("topic")
-@click.argument("book_id")
-@click.argument("topic_id")
+@click.argument("book_id", shell_complete=_complete_book_id)
+@click.argument("topic_id", shell_complete=_complete_topic_id)
 @click.argument("title")
 @click.option("--parent", default="", help="Parent topic/chapter ID")
 def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
@@ -295,8 +316,8 @@ def add_topic(book_id: str, topic_id: str, title: str, parent: str) -> None:
 
 
 @main.command("edit")
-@click.argument("book_id")
-@click.argument("topic_id", required=False, default=None)
+@click.argument("book_id", shell_complete=_complete_book_id)
+@click.argument("topic_id", required=False, default=None, shell_complete=_complete_topic_id)
 @click.option("--title", default=None, help="New title")
 @click.option("--exam", default=None, help="New exam date (YYYY-MM-DD, or 'none' to clear)")
 @click.option("--sessions", default=None, type=int, help="New sessions_per_topic")
@@ -395,8 +416,8 @@ def edit(
 
 
 @main.command("remove")
-@click.argument("book_id")
-@click.argument("topic_id", required=False, default=None)
+@click.argument("book_id", shell_complete=_complete_book_id)
+@click.argument("topic_id", required=False, default=None, shell_complete=_complete_topic_id)
 @click.option("--dry-run", is_flag=True, help="Preview what would be removed without making changes")
 def remove(book_id: str, topic_id: str | None, dry_run: bool) -> None:
     """Remove a book or a single topic.
@@ -488,7 +509,7 @@ def remove(book_id: str, topic_id: str | None, dry_run: bool) -> None:
 
 
 @main.command("done")
-@click.argument("topic_id", required=False, default=None)
+@click.argument("topic_id", required=False, default=None, shell_complete=_complete_topic_id)
 def mark_done(topic_id: str | None) -> None:
     """Mark a topic as studied and log a session.
 
@@ -606,7 +627,7 @@ def mark_done(topic_id: str | None) -> None:
 
 
 @main.command("undo")
-@click.argument("topic_id")
+@click.argument("topic_id", shell_complete=_complete_topic_id)
 def undo(topic_id: str) -> None:
     """Undo the last study session for a topic."""
     _ensure_init()
@@ -644,7 +665,7 @@ def undo(topic_id: str) -> None:
 
 
 @main.command("today")
-@click.argument("book_id", required=False, default=None)
+@click.argument("book_id", required=False, default=None, shell_complete=_complete_book_id)
 @click.option("--days", default=3, type=int, show_default=True, help="Days to look ahead for 'coming up' section")
 def today(book_id: str | None, days: int) -> None:
     """Show what's due today (across all books or a specific one)."""
@@ -654,7 +675,7 @@ def today(book_id: str | None, days: int) -> None:
 
 
 @main.command("plan")
-@click.argument("book_id", required=False, default=None)
+@click.argument("book_id", required=False, default=None, shell_complete=_complete_book_id)
 def plan(book_id: str | None) -> None:
     """Show full plan and progress for a book, or all books."""
     _ensure_init()
@@ -675,7 +696,7 @@ def plan(book_id: str | None) -> None:
 
 
 @main.command("freeze")
-@click.argument("book_id")
+@click.argument("book_id", shell_complete=_complete_book_id)
 @click.argument("duration")
 @click.option("--dry-run", is_flag=True, help="Preview the freeze without making changes")
 def freeze(book_id: str, duration: str, dry_run: bool) -> None:
@@ -794,7 +815,7 @@ def freeze(book_id: str, duration: str, dry_run: bool) -> None:
 
 
 @main.command("unfreeze")
-@click.argument("book_id")
+@click.argument("book_id", shell_complete=_complete_book_id)
 @click.option("--dry-run", is_flag=True, help="Preview the unfreeze without making changes")
 def unfreeze(book_id: str, dry_run: bool) -> None:
     """Unfreeze a study plan (resume early)."""
@@ -843,7 +864,7 @@ def unfreeze(book_id: str, dry_run: bool) -> None:
 
 
 @main.command("stats")
-@click.argument("book_id", required=False, default=None)
+@click.argument("book_id", required=False, default=None, shell_complete=_complete_book_id)
 def stats(book_id: str | None) -> None:
     """Show study statistics (overall or for a specific book)."""
     _ensure_init()
@@ -944,7 +965,7 @@ def stats(book_id: str | None) -> None:
 
 
 @main.command("export")
-@click.argument("book_id")
+@click.argument("book_id", shell_complete=_complete_book_id)
 @click.option("--output", "-o", default=None, help="Output file path")
 @click.option(
     "--format", "fmt", default="toml",
