@@ -38,6 +38,20 @@ def _wrap_title(title: str, width: int = TITLE_WRAP_WIDTH) -> str:
     return "\n".join(lines) if lines else title
 
 
+def _relative_date(d: datetime.date) -> str:
+    """Return a human-friendly relative label like 'in 3 days' or '2 days ago'."""
+    delta = (d - datetime.date.today()).days
+    if delta == 0:
+        return "today"
+    if delta == 1:
+        return "tomorrow"
+    if delta == -1:
+        return "yesterday"
+    if delta > 0:
+        return f"in {delta} days"
+    return f"{-delta} days ago"
+
+
 def _format_due(status: TopicStatus, book: Book) -> str:
     """Format the due date display for a topic."""
     if status.is_done:
@@ -52,13 +66,13 @@ def _format_due(status: TopicStatus, book: Book) -> str:
     if book.frozen:
         return "[yellow](paused)[/yellow]"
 
+    rel = _relative_date(status.next_due)
     if status.next_due < today:
-        days = (today - status.next_due).days
-        return f"[red]OVERDUE ({days} day{'s' if days != 1 else ''})[/red]"
+        return f"[red]OVERDUE ({rel})[/red]"
     elif status.next_due == today:
         return "[yellow]due today[/yellow]"
     else:
-        return f"[dim]{status.next_due.strftime('%b %d')}[/dim]"
+        return f"[dim]{status.next_due.strftime('%b %d')} ({rel})[/dim]"
 
 
 def _format_due_today(status: TopicStatus) -> str:
@@ -67,12 +81,11 @@ def _format_due_today(status: TopicStatus) -> str:
         return ""
     today = datetime.date.today()
     if status.next_due < today:
-        days = (today - status.next_due).days
-        return f"due {status.next_due.strftime('%b %d')} ({days} day{'s' if days != 1 else ''} ago)"
+        return f"due {status.next_due.strftime('%b %d')} ({_relative_date(status.next_due)})"
     elif status.next_due == today:
         return ""
     else:
-        return f"due {status.next_due.strftime('%b %d')}"
+        return f"due {status.next_due.strftime('%b %d')} ({_relative_date(status.next_due)})"
 
 
 def display_all_books(books: list[Book]) -> None:
@@ -249,8 +262,10 @@ def display_today(
         sessions = load_sessions(book.filename)
         due_info = get_due_topics(book, sessions, include_future_days=lookahead_days)
 
-        # Book header
-        header = f"\n  ─── {book.title} ({book.id}) "
+        # Book header with progress
+        completed, total = compute_book_progress(book, sessions)
+        pct = round(completed / total * 100) if total > 0 else 0
+        header = f"\n  ─── {book.title} ({book.id}) [{pct}%] "
         if book.exam_date:
             days_left = (book.exam_date - datetime.date.today()).days
             if days_left < 0:
