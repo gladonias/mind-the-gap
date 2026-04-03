@@ -784,9 +784,7 @@ def freeze(book_id: str, duration: str, dry_run: bool) -> None:
         console.print("  Cancelled.\n")
         return
 
-    book.frozen = True
-    book.frozen_since = since
-    book.frozen_until = until
+    book.freeze(since, until)
     save_book(book, filepath)
 
     console.print(
@@ -836,9 +834,7 @@ def unfreeze(book_id: str, dry_run: bool) -> None:
         console.print("  [dim](dry run — no changes made)[/dim]\n")
         return
 
-    book.frozen = False
-    book.frozen_since = None
-    book.frozen_until = None
+    book.unfreeze()
     save_book(book, filepath)
 
     console.print(

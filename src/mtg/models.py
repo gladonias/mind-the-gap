@@ -68,6 +68,28 @@ class Book:
         """Return topics with no parent (chapters or standalone topics)."""
         return [t for t in self.topics if t.is_root]
 
+    def freeze(self, since: datetime.date, until: datetime.date) -> None:
+        """Freeze this book for a date range.
+
+        Sets frozen=True, frozen_since, and frozen_until atomically so
+        the invariant (all three set together) is always maintained.
+
+        Raises ValueError if *until* is not after *since*.
+        """
+        if until <= since:
+            raise ValueError(
+                f"Freeze end date ({until}) must be after start date ({since})."
+            )
+        self.frozen = True
+        self.frozen_since = since
+        self.frozen_until = until
+
+    def unfreeze(self) -> None:
+        """Unfreeze this book, clearing all freeze-related fields."""
+        self.frozen = False
+        self.frozen_since = None
+        self.frozen_until = None
+
     def would_create_cycle(self, topic_id: str, new_parent: str) -> bool:
         """Check if setting topic_id's parent to new_parent would create a cycle.
 
