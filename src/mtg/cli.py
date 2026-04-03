@@ -946,8 +946,16 @@ def stats(book_id: str | None) -> None:
 @main.command("export")
 @click.argument("book_id")
 @click.option("--output", "-o", default=None, help="Output file path")
-def export_book(book_id: str, output: str | None) -> None:
-    """Export a book's current state as a clean TOML file."""
+@click.option(
+    "--format", "fmt", default="toml",
+    type=click.Choice(["toml", "json", "csv"], case_sensitive=False),
+    show_default=True, help="Export format",
+)
+def export_book(book_id: str, output: str | None, fmt: str) -> None:
+    """Export a book's plan and session history.
+
+    Formats: toml (default, re-importable), json, csv (sessions only).
+    """
     _ensure_init()
 
     result = find_book_by_id(book_id)
@@ -956,43 +964,92 @@ def export_book(book_id: str, output: str | None) -> None:
         return
 
     book, filepath = result
+    sessions = load_sessions(book.filename)
 
+    suffix = {"toml": ".toml", "json": ".json", "csv": ".csv"}[fmt]
     if output:
         dest = Path(output)
     else:
-        dest = Path.cwd() / f"{book.filename}-export.toml"
+        dest = Path.cwd() / f"{book.filename}-export{suffix}"
 
-    # Build export with both plan and sessions
-    sessions = load_sessions(book.filename)
+    if fmt == "toml":
+        import toml as toml_lib
 
-    import toml as toml_lib
+        export_data: dict = {
+            "book": {
+                "title": book.title,
+                "id": book.id,
+                "sessions_per_topic": book.sessions_per_topic,
+            },
+            "topic": [
+                {"id": t.id, "title": t.title, "parent": t.parent} for t in book.topics
+            ],
+            "session": [
+                {
+                    "topic_id": s.topic_id,
+                    "date": s.date.isoformat(),
+                    "confidence": s.confidence,
+                    "next_due": s.next_due.isoformat(),
+                    "session_number": s.session_number,
+                }
+                for s in sessions
+            ],
+        }
+        if book.exam_date:
+            export_data["book"]["exam_date"] = book.exam_date.isoformat()
 
-    export_data: dict = {
-        "book": {
-            "title": book.title,
-            "id": book.id,
-            "sessions_per_topic": book.sessions_per_topic,
-        },
-        "topic": [
-            {"id": t.id, "title": t.title, "parent": t.parent} for t in book.topics
-        ],
-        "session": [
-            {
-                "topic_id": s.topic_id,
-                "date": s.date.isoformat(),
-                "confidence": s.confidence,
-                "next_due": s.next_due.isoformat(),
-                "session_number": s.session_number,
-            }
-            for s in sessions
-        ],
-    }
+        with open(dest, "w") as f:
+            toml_lib.dump(export_data, f)
 
-    if book.exam_date:
-        export_data["book"]["exam_date"] = book.exam_date.isoformat()
+    elif fmt == "json":
+        import json
 
-    with open(dest, "w") as f:
-        toml_lib.dump(export_data, f)
+        export_data = {
+            "book": {
+                "title": book.title,
+                "id": book.id,
+                "sessions_per_topic": book.sessions_per_topic,
+                "exam_date": book.exam_date.isoformat() if book.exam_date else None,
+                "frozen": book.frozen,
+            },
+            "topics": [
+                {"id": t.id, "title": t.title, "parent": t.parent}
+                for t in book.topics
+            ],
+            "sessions": [
+                {
+                    "topic_id": s.topic_id,
+                    "date": s.date.isoformat(),
+                    "confidence": s.confidence,
+                    "next_due": s.next_due.isoformat(),
+                    "session_number": s.session_number,
+                }
+                for s in sessions
+            ],
+        }
+        with open(dest, "w") as f:
+            json.dump(export_data, f, indent=2)
+            f.write("\n")
+
+    elif fmt == "csv":
+        import csv
+
+        with open(dest, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "topic_id", "topic_title", "date", "confidence",
+                "next_due", "session_number",
+            ])
+            topic_titles = {t.id: t.title for t in book.topics}
+            for s in sessions:
+                writer.writerow([
+                    s.topic_id,
+                    topic_titles.get(s.topic_id, ""),
+                    s.date.isoformat(),
+                    s.confidence,
+                    s.next_due.isoformat(),
+                    s.session_number,
+                ])
 
     console.print(f"\n  [green]✓[/green] Exported to {dest}\n")
 
