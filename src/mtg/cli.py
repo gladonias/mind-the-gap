@@ -1176,5 +1176,74 @@ def config_intervals_reset() -> None:
     console.print("\n  [green]✓[/green] Intervals reset to defaults.\n")
 
 
+@main.command("backup")
+def backup() -> None:
+    """Create a zip backup of the entire data directory."""
+    _ensure_init()
+
+    import zipfile
+
+    data_dir = get_data_dir()
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = Path.cwd() / f"mtg-backup-{timestamp}.zip"
+
+    file_count = 0
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filepath in sorted(data_dir.glob("*.toml")):
+            zf.write(filepath, filepath.name)
+            file_count += 1
+
+    if file_count == 0:
+        dest.unlink()
+        console.print("\n  [dim]No data files to back up.[/dim]\n")
+        return
+
+    size_kb = dest.stat().st_size / 1024
+    console.print(
+        f"\n  [green]✓[/green] Backed up {file_count} file(s) to {dest.name} "
+        f"({size_kb:.1f} KB)\n"
+    )
+
+
+@main.command("restore")
+@click.argument("backup_file", type=click.Path(exists=True))
+def restore(backup_file: str) -> None:
+    """Restore data from a zip backup created by `mtg backup`.
+
+    This overwrites existing files in the data directory.
+    """
+    _ensure_init()
+
+    import zipfile
+
+    source = Path(backup_file)
+    if not zipfile.is_zipfile(source):
+        console.print(f"\n  [red]{source.name} is not a valid zip file.[/red]\n")
+        return
+
+    with zipfile.ZipFile(source, "r") as zf:
+        toml_files = [n for n in zf.namelist() if n.endswith(".toml")]
+        if not toml_files:
+            console.print("\n  [red]No TOML files found in the archive.[/red]\n")
+            return
+
+        console.print(
+            f"\n  This will restore {len(toml_files)} file(s) from "
+            f"[bold]{source.name}[/bold] into {get_data_dir()}."
+        )
+        console.print("  [yellow]Existing files with the same names will be overwritten.[/yellow]")
+
+        if not click.confirm("\n  Continue?"):
+            console.print("  Cancelled.\n")
+            return
+
+        data_dir = ensure_data_dir()
+        for name in toml_files:
+            zf.extract(name, data_dir)
+            console.print(f"  [green]✓[/green] Restored {name}")
+
+    console.print()
+
+
 if __name__ == "__main__":
     main()
