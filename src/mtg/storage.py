@@ -180,8 +180,14 @@ def save_sessions(book_slug: str, sessions: list[Session]) -> None:
 
 
 def append_session(book_slug: str, session: Session) -> None:
-    """Append a single session to the book's state file."""
+    """Append a single session to the book's state file.
+
+    The session_number is automatically corrected to be sequential:
+    it is set to one more than the current count of sessions for that topic.
+    """
     sessions = load_sessions(book_slug)
+    existing_count = sum(1 for s in sessions if s.topic_id == session.topic_id)
+    session.session_number = existing_count + 1
     sessions.append(session)
     save_sessions(book_slug, sessions)
 
