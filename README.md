@@ -17,7 +17,16 @@ Every day, you run `mtg today` and it tells you what needs attention. That's it.
 - **Hierarchical topics** — organize by chapters and sub-topics, with progress rolling up automatically
 - **Flexible scheduling** — a 10-level confidence scale maps to review intervals you can customize
 - **Multiple books** — track several courses or textbooks at once
-- **Freeze plans** — going on holiday? Freeze a plan and all due dates pause
+- **Freeze plans** — going on holiday? Freeze a plan and all due dates pause; set a past start date for retroactive freezes
+- **Edit anything** — rename books, change exam dates, reparent topics — all from the command line
+- **Undo sessions** — made a mistake? Undo the last session for any topic
+- **Backup & restore** — zip-based backups of your entire data directory, restorable with one command
+- **Export** — export plans and session history to TOML (re-importable), JSON, or CSV
+- **Config management** — view and edit review intervals from the CLI, or reset to defaults
+- **Study statistics** — streaks, session counts, per-book breakdowns, and more
+- **Shell tab completion** — completions for book and topic IDs in bash, zsh, and fish
+- **Relative dates** — due dates shown as "today", "tomorrow", "in 3 days", or "2 days ago"
+- **Colour-coded confidence** — confidence levels displayed in a red-to-green colour scale
 - **Plain text files** — everything is stored in human-readable TOML files you fully own and control
 - **Exam countdown** — optionally set an exam date and see how many days you have left
 - **Works offline** — no internet, no accounts, no telemetry
@@ -79,6 +88,33 @@ mtg init
 ```
 
 This will ask you where to store your study files. The default is `~/Documents/mind-the-gap/`. You can pick a custom path — everything goes there, and you can back it up, sync it, or move it anytime.
+
+### Shell completion
+
+Mind the Gap supports tab completion for book and topic IDs in **bash**, **zsh**, and **fish**.
+
+**Bash** — add to `~/.bashrc`:
+
+```bash
+eval "$(_MTG_COMPLETE=bash_source mtg)"
+```
+
+**Zsh** — add to `~/.zshrc`:
+
+```zsh
+autoload -Uz compinit && compinit -i 2>/dev/null
+eval "$(_MTG_COMPLETE=zsh_source mtg)"
+```
+
+> **Important:** The `compinit` line must appear **before** the eval line. If `compinit` is already loaded elsewhere in your `.zshrc` (e.g. by Oh My Zsh), you can skip that line and just add the `eval`.
+
+**Fish** — add to `~/.config/fish/completions/mtg.fish`:
+
+```fish
+eval (env _MTG_COMPLETE=fish_source mtg)
+```
+
+After adding the line, restart your shell or run `source ~/.bashrc` (or `~/.zshrc`). Then type `mtg done ` and press Tab to see topic completions.
 
 ## Quick start
 
@@ -142,6 +178,8 @@ mtg done clrs2.1
 
 The app will ask when you studied (today or a custom date) and how confident you feel on a scale of 1–10. Based on your answer, it schedules the next review.
 
+You can also run `mtg done` with no arguments to pick from a list of due topics interactively.
+
 ### 5. Check your progress
 
 ```bash
@@ -157,19 +195,52 @@ This shows your full plan with progress bars, completion fractions, and due date
 | Command | Description |
 |---|---|
 | `mtg` | Show all books (overview table) |
-| `mtg plan` | Show all books in detail |
-| `mtg plan <book_id>` | Show detailed plan/progress for a book |
+| `mtg init` | First-time setup |
+| **Study** | |
 | `mtg today` | Show what's due across all books |
 | `mtg today <book_id>` | Show what's due for a specific book |
-| `mtg add <file.toml>` | Import a study plan |
-| `mtg topic <book_id> <topic_id> <title>` | Add a single topic |
-| `mtg done <topic_id>` | Log a study session |
-| `mtg freeze <book_id> <duration>` | Freeze a plan |
-| `mtg unfreeze <book_id>` | Unfreeze a plan early |
-| `mtg export <book_id>` | Export plan + session history |
-| `mtg init` | First-time setup |
+| `mtg today --days 7` | Look ahead 7 days instead of the default 3 |
+| `mtg plan` | Show all books in detail |
+| `mtg plan <book_id>` | Show detailed plan/progress for a book |
+| `mtg done` | Log a session (pick from due topics interactively) |
+| `mtg done <topic_id>` | Log a study session for a specific topic |
+| `mtg undo <topic_id>` | Undo the last study session for a topic |
+| **Book management** | |
+| `mtg add <file.toml>` | Import a study plan (supports re-importing exports with sessions) |
+| `mtg topic <book_id> <topic_id> <title>` | Add a single topic (`--parent` to nest) |
+| `mtg edit <book_id> --title "..." --exam 2026-09-01 --sessions 8` | Edit book properties |
+| `mtg edit <book_id> <topic_id> --title "..." --parent ch2` | Edit a topic's title or parent |
+| `mtg remove <book_id>` | Remove an entire book and its sessions |
+| `mtg remove <book_id> <topic_id>` | Remove a topic (and its descendants) |
+| **Scheduling** | |
+| `mtg freeze <book_id> <duration>` | Freeze a plan (`10D`, `2W`, `3M`, `1Y`, or `YYYY-MM-DD`) |
+| `mtg unfreeze <book_id>` | Unfreeze a plan (resume early) |
+| **Data & admin** | |
+| `mtg stats` | Show overall study statistics (streaks, averages, etc.) |
+| `mtg stats <book_id>` | Show statistics for a specific book |
+| `mtg export <book_id>` | Export plan + sessions (default: TOML) |
+| `mtg export <book_id> --format json` | Export as JSON |
+| `mtg export <book_id> --format csv` | Export sessions as CSV |
+| `mtg backup` | Create a zip backup of all data files |
+| `mtg restore <file.zip>` | Restore from a backup archive |
+| **Configuration** | |
+| `mtg config` | Show current configuration summary |
+| `mtg config intervals` | View the confidence-to-days interval mapping |
+| `mtg config intervals set <level> <days>` | Set interval for a confidence level |
+| `mtg config intervals reset` | Reset all intervals to defaults |
+| **Other** | |
 | `mtg --version` | Show version |
 | `mtg --help` | Show help |
+
+### Flags
+
+Several commands support a `--dry-run` flag that previews the action without making changes:
+
+```bash
+mtg remove clrs clrs2.1 --dry-run   # see what would be removed
+mtg freeze clrs 2W --dry-run         # preview the freeze
+mtg unfreeze clrs --dry-run          # preview the unfreeze
+```
 
 ### Adding topics on the fly
 
@@ -185,6 +256,22 @@ mtg topic bio bio1.2 "Cell Division" --parent bio1
 ```
 
 If the book doesn't exist yet, `mtg topic` will ask you to create it, including the title, exam date, and number of sessions.
+
+### Editing books and topics
+
+Change a book's title, exam date, or sessions-per-topic:
+
+```bash
+mtg edit clrs --title "CLRS 4th Edition" --exam 2026-09-01 --sessions 8
+```
+
+Move a topic to a different parent, or rename it:
+
+```bash
+mtg edit clrs clrs2.1 --title "Insertion Sort (revised)" --parent clrs3
+```
+
+Clear an exam date with `--exam none`.
 
 ### Freezing a plan
 
@@ -206,12 +293,49 @@ mtg freeze clrs 2026-06-01
 
 Duration format: a number followed by `D` (days), `W` (weeks), `M` (months), or `Y` (years).
 
-Only topics that are due or overdue between now and the unfreeze date get pushed. Topics already scheduled after the unfreeze date stay exactly where they are.
+When you freeze, the app asks whether the freeze started today or on a past date — useful if you forgot to freeze before your break started.
+
+Only topics that are due or overdue between the freeze start and end date get pushed. Topics already scheduled after the unfreeze date stay exactly where they are.
 
 To resume early:
 
 ```bash
 mtg unfreeze clrs
+```
+
+### Backup and restore
+
+Create a zip backup of your entire data directory:
+
+```bash
+mtg backup
+# ✓ Backed up 6 file(s) to mtg-backup-20260403-140000.zip (2.1 KB)
+```
+
+Restore from a backup:
+
+```bash
+mtg restore mtg-backup-20260403-140000.zip
+```
+
+This overwrites existing files with the same names. You'll be asked to confirm before anything is written.
+
+### Exporting data
+
+Export a book's plan and session history:
+
+```bash
+# TOML (default) — can be re-imported with `mtg add`
+mtg export clrs
+
+# JSON
+mtg export clrs --format json
+
+# CSV (sessions only — great for spreadsheets)
+mtg export clrs --format csv
+
+# Custom output path
+mtg export clrs -o ~/Desktop/clrs-export.toml
 ```
 
 ### Understanding progress
@@ -227,13 +351,26 @@ Chapter 4 — Divide and Conquer              █████░░░░░  5/
 
 The chapter's `5/15` is simply the sum of its children (2 + 2 + 1 out of 5 + 5 + 5). Once all topics reach `5/5`, the chapter shows `15/15 ✓ done`.
 
-The overall book percentage works the same way — it's the total completed sessions across all leaf topics divided by the total possible.
+The overall book percentage works the same way — it's the total completed sessions across all leaf topics divided by the total possible. This percentage is also shown in the `mtg today` view next to each book header.
 
 ## Customisation
 
 ### Confidence scale and intervals
 
-After running `mtg init`, you'll find an `intervals.toml` file in your data directory. This controls how many days pass before each review, based on your confidence rating:
+You can view and edit the confidence-to-days mapping directly from the CLI:
+
+```bash
+# View current intervals
+mtg config intervals
+
+# Change a single level
+mtg config intervals set 5 7
+
+# Reset everything to defaults
+mtg config intervals reset
+```
+
+Or edit the `intervals.toml` file in your data directory directly:
 
 ```toml
 [intervals]
@@ -249,7 +386,7 @@ After running `mtg init`, you'll find an `intervals.toml` file in your data dire
 10 = 21    # review in 3 weeks
 ```
 
-Edit this file to change the curve. Want more aggressive early review? Set `1 = 1, 2 = 1, 3 = 2`. Want longer gaps at the top end? Set `10 = 30`. The app reads this file every time it schedules, so changes take effect immediately.
+Want more aggressive early review? Set `1 = 1, 2 = 1, 3 = 2`. Want longer gaps at the top end? Set `10 = 30`. Changes take effect immediately.
 
 The confidence levels map to these descriptions (shown every time you log a session):
 
@@ -268,7 +405,13 @@ The confidence levels map to these descriptions (shown every time you log a sess
 
 ### Number of sessions
 
-Set `sessions_per_topic` in your book's TOML file. Default is 10. This means you'll study each topic once and review it 9 more times. If you set it to 5, you get 1 study + 4 reviews.
+Set `sessions_per_topic` in your book's TOML file, or change it later:
+
+```bash
+mtg edit clrs --sessions 8
+```
+
+Default is 10. This means you'll study each topic once and review it 9 more times. If you set it to 5, you get 1 study + 4 reviews.
 
 ### File structure
 
@@ -287,7 +430,7 @@ Everything lives in your data directory:
 - **`*.state.toml`** — session logs (auto-managed, but human-readable). Each completed study session is an append-only entry.
 - **`intervals.toml`** — shared across all books.
 
-To remove a book, delete its `.toml` and `.state.toml` files. To share a plan with someone, send them just the `.toml` file — they'll start fresh with no session history.
+To remove a book, use `mtg remove <book_id>` or delete its `.toml` and `.state.toml` files manually. To share a plan with someone, export it with `mtg export` and send them the file — they can import it with `mtg add`.
 
 ## Examples
 
